@@ -45,6 +45,7 @@ import json
 import os
 import re
 import time
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -196,6 +197,16 @@ def _sym(v: Any) -> str:
     return s
 
 
+def _rsi_map(scan: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """{symbol: {"rsi14", "close", "bar_date"}} from the scan's daily indicators; empty for a scan made before RSI
+    was added or on a non-daily timeframe."""
+    ind = scan.get("indicators") or {}
+    return ind.get("symbols") or {} if ind.get("available", True) else {}
+
+
+_CURRENT_FILE: ContextVar[Optional[Dict[str, Any]]] = ContextVar("assistant_current_file", default=None)
+
+
 def _universe_symbol(raw: Any, scan: Dict[str, Any]) -> str:
     """A ticker as Sigmalytic's universe writes it. Brokers write share classes with a dot, dash or slash (BRK.B,
     BF-B, BRK/B); the universe writes them without (BRKB, BFB)."""
@@ -219,7 +230,8 @@ def _setup_label(r: Dict[str, Any]) -> str:
 
 def tool_search_scan(signals: Optional[List[str]] = None, symbols: Optional[List[str]] = None,
                      sector: Optional[str] = None, max_sessions_held: Optional[int] = None,
-                     new_only: bool = False, sort_by: str = "newest", limit: int = 25) -> Dict[str, Any]:
+                     new_only: bool = False, sort_by: str = "newest", limit: int = 25,
+                     rsi_below: Optional[float] = None, exclude_no_setup: bool = False) -> Dict[str, Any]:
     scan = _load_scan()
     if scan.get("ok") is False:
         return {"ok": False, "error": f"Scan results unavailable: {scan.get('error')}"}
@@ -227,6 +239,10 @@ def tool_search_scan(signals: Optional[List[str]] = None, symbols: Optional[List
     syms = {_universe_symbol(s, scan) for s in (symbols or []) if s}
     sec = (sector or "").strip().lower()
     co = companies()
+    rsis = _rsi_map(scan)
+    if rsi_below is not None and not rsis:
+        return {"ok": False, "error": "This scan has no RSI yet. RSI is added by scans run after the RSI update; "
+                                      "run a scan (Sigma Radar > Run Scan Now) and ask again."}
     rows: List[Dict[str, Any]] = []
     for r in scan.get("results") or []:
         sym = str(r.get("symbol") or "").upper()
@@ -253,9 +269,18 @@ def tool_search_scan(signals: Optional[List[str]] = None, symbols: Optional[List
             for k in ("entry_trigger", "invalidation"):
                 if h.get(k) is not None:
                     row[k] = h[k]
+            rsi = (rsis.get(sym) or {}).get("rsi14")
+            if rsi is not None:
+                row["rsi14"] = rsi
+            if exclude_no_setup and row["setup_state"] == "No setup":
+                continue
+            if rsi_below is not None and (rsi is None or rsi >= float(rsi_below)):
+                continue
             rows.append({k: v for k, v in row.items() if v not in (None, "")})
     if sort_by == "pct_beyond":
         rows.sort(key=lambda x: -(x.get("pct_beyond_level") or 0))
+    elif sort_by == "rsi":
+        rows.sort(key=lambda x: (x.get("rsi14") is None, x.get("rsi14") or 0))
     elif sort_by == "symbol":
         rows.sort(key=lambda x: x["symbol"])
     else:
@@ -274,7 +299,7 @@ def tool_search_scan(signals: Optional[List[str]] = None, symbols: Optional[List
         # A holdings / watchlist check: every match for the named tickers comes back in one call (compact rows),
         # plus the tickers with no flag and the tickers Sigmalytic does not scan, so the answer can be complete.
         keep = ("symbol", "signal", "close", "level", "first_crossed", "sessions_held", "pct_beyond_level",
-                "setup_state")
+                "setup_state", "rsi14")
         out["rows"] = [{k: x[k] for k in keep if k in x} for x in rows[:MAX_SYMBOL_ROWS]]
         out["returned"] = len(out["rows"])
         flagged = {x["symbol"] for x in rows}
@@ -389,6 +414,159 @@ def tool_get_daily_report(date: str, symbol: Optional[str] = None) -> Dict[str, 
             "truncated": len(text) > MAX_TOOL_RESULT_CHARS}
 
 
+
+
+QTY_HEADERS = {"quantity", "qty", "shares", "quantity held", "position", "share quantity", "units", "qty (quantity)"}
+UNIT_COST_HEADERS = {"average cost", "avg cost", "avg. cost", "average price", "avg price", "cost/share",
+                     "cost per share", "unit cost", "price paid", "purchase price", "average cost basis",
+                     "avg cost basis", "average cost per share", "avg cost/share", "cost basis per share"}
+TOTAL_COST_HEADERS = {"cost basis", "total cost", "cost basis total", "total cost basis", "book value", "cost",
+                      "cost basis ($)", "total cost ($)"}
+
+
+def _head(cell: Any) -> str:
+    """A column header reduced for matching: 'Price Paid $' -> 'price paid', 'Qty #' -> 'qty'."""
+    return re.sub(r"\s+", " ", re.sub(r"[$#*:]", " ", str(cell or "").lower())).strip()
+
+
+QTY_HEADERS |= {"qty", "quantity #", "shares held", "current quantity"}
+UNIT_COST_HEADERS |= {"price paid", "avg cost per share", "average unit cost", "cost price"}
+TOTAL_COST_HEADERS |= {"total cost basis", "cost basis total", "adjusted cost basis", "cost basis (total)"}
+
+
+def _num(cell: Any) -> Optional[float]:
+    t = str(cell or "").strip()
+    if not t or t in ("--", "-", "n/a", "N/A"):
+        return None
+    neg = t.startswith("(") and t.endswith(")")
+    t = re.sub(r"[,$%()\s]", "", t)
+    try:
+        v = float(t)
+    except ValueError:
+        return None
+    return -v if neg else v
+
+
+def parse_positions(text: str) -> Dict[str, Any]:
+    """Stock positions from a broker positions file: {symbol: {"qty", "cost_total"}}, with duplicate symbols (several
+    accounts) added together. Rows without a plain ticker (options, cash, totals) are counted as skipped."""
+    import csv as _csv
+    lines = [ln for ln in (text or "").splitlines() if ln.strip()]
+    delim = "\t" if lines and lines[0].count("\t") > lines[0].count(",") else ","
+    cols: Optional[Dict[str, int]] = None
+    held: Dict[str, Dict[str, float]] = {}
+    skipped = 0
+    for row in _csv.reader(lines, delimiter=delim):
+        cells = [c.strip() for c in row]
+        if cells and cells[0].startswith("Sheet: "):
+            cols = None
+            continue
+        low = [_head(c) for c in cells]
+        if cols is None or any(c in TICKER_HEADERS for c in low):
+            found = {}
+            for i, c in enumerate(low):
+                if c in TICKER_HEADERS and "sym" not in found:
+                    found["sym"] = i
+                elif c in QTY_HEADERS and "qty" not in found:
+                    found["qty"] = i
+                elif c in UNIT_COST_HEADERS and "unit" not in found:
+                    found["unit"] = i
+                elif c in TOTAL_COST_HEADERS and "total" not in found:
+                    found["total"] = i
+            if "sym" in found:
+                cols = found
+            continue
+        sym = cells[cols["sym"]].upper().replace("/", ".") if cols["sym"] < len(cells) else ""
+        if not re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,9}", sym):
+            skipped += 1
+            continue
+        qty = _num(cells[cols["qty"]]) if "qty" in cols and cols["qty"] < len(cells) else None
+        unit = _num(cells[cols["unit"]]) if "unit" in cols and cols["unit"] < len(cells) else None
+        total = _num(cells[cols["total"]]) if "total" in cols and cols["total"] < len(cells) else None
+        if not qty:
+            skipped += 1
+            continue
+        cost_total = total if total is not None else (unit * qty if unit is not None else None)
+        h = held.setdefault(sym, {"qty": 0.0, "cost_total": 0.0, "cost_known": True})
+        h["qty"] += qty
+        if cost_total is None:
+            h["cost_known"] = False
+        else:
+            h["cost_total"] += cost_total
+    return {"positions": held, "skipped_rows": skipped, "columns": sorted((cols or {}).keys())}
+
+
+def tool_review_holdings(losers_only: bool = True, rsi_below: Optional[float] = None,
+                         exclude_no_setup: bool = False, signals: Optional[List[str]] = None,
+                         sort_by: str = "pct_loss", limit: int = 100) -> Dict[str, Any]:
+    f = _CURRENT_FILE.get()
+    if not f or not f.get("text"):
+        return {"ok": False, "error": "No positions file is attached. Attach a broker positions file (CSV or "
+                                      "Excel) with symbol, quantity and cost columns."}
+    parsed = parse_positions(f["text"])
+    pos = parsed["positions"]
+    if not pos:
+        return {"ok": False, "error": "No stock positions could be read. The file needs a Symbol (or Ticker) column "
+                                      "and a Quantity column, plus a cost column (Cost Basis or Average Cost).",
+                "columns_found": parsed["columns"]}
+    scan = _load_scan()
+    rsis = _rsi_map(scan)
+    if not rsis:
+        return {"ok": False, "error": "This scan has no RSI or latest closes yet. They are added by scans run after "
+                                      "the RSI update; run a scan (Sigma Radar > Run Scan Now) and ask again."}
+    by_sym = {str(r.get("symbol") or "").upper(): r for r in scan.get("results") or []}
+    want = {str(x).lower() for x in (signals or []) if x}
+    rows, no_price, no_cost = [], [], []
+    for raw_sym, h in pos.items():
+        sym = _universe_symbol(raw_sym, scan)
+        ind = rsis.get(sym)
+        if not ind:
+            no_price.append(raw_sym)
+            continue
+        if not h["cost_known"] or not h["qty"]:
+            no_cost.append(raw_sym)
+            continue
+        close, qty = float(ind["close"]), h["qty"]
+        avg = h["cost_total"] / qty
+        value = close * qty
+        pnl = value - h["cost_total"]
+        pct = (close / avg - 1) * 100 if avg else None
+        r = by_sym.get(sym, {})
+        flags = sorted({signal_info(x.get("type"))[1] for x in r.get("hits") or []})
+        keys = {signal_info(x.get("type"))[0] for x in r.get("hits") or []}
+        row = {"symbol": sym, "quantity": round(qty, 4), "avg_cost": round(avg, 2), "close": round(close, 2),
+               "gain_loss_pct": round(pct, 2) if pct is not None else None, "gain_loss_usd": round(pnl, 2),
+               "rsi14": ind["rsi14"], "signals": flags, "setup_state": _setup_label(r) if r else "No setup"}
+        if losers_only and not (pnl < 0):
+            continue
+        if rsi_below is not None and not (ind["rsi14"] < float(rsi_below)):
+            continue
+        if exclude_no_setup and row["setup_state"] == "No setup":
+            continue
+        if want and not (keys & want):
+            continue
+        rows.append(row)
+    if sort_by == "dollar_loss":
+        rows.sort(key=lambda x: x["gain_loss_usd"])
+    elif sort_by == "rsi":
+        rows.sort(key=lambda x: x["rsi14"])
+    else:
+        rows.sort(key=lambda x: (x["gain_loss_pct"] is None, x["gain_loss_pct"] or 0))
+    limit = max(1, min(int(limit or 100), MAX_SYMBOL_ROWS))
+    dates = sorted({v.get("bar_date") for v in rsis.values() if v.get("bar_date")})
+    return {"ok": True, "file": f["name"], "prices_as_of": dates[-1] if dates else None,
+            "scan_generated_at": scan.get("generated_at"), "rsi": "daily RSI(14), Wilder",
+            "positions_read": len(pos), "rows_skipped_in_file": parsed["skipped_rows"],
+            "filters": {"losers_only": losers_only, "rsi_below": rsi_below, "exclude_no_setup": exclude_no_setup,
+                        "signals": sorted(want)},
+            "total_matched": len(rows), "returned": min(limit, len(rows)),
+            "matched_gain_loss_usd": round(sum(x["gain_loss_usd"] for x in rows), 2),
+            "rows": rows[:limit], "no_price": sorted(no_price), "no_cost_in_file": sorted(no_cost),
+            "notes": ("Gain/loss = Sigmalytic's latest close against the cost in the file, computed by code. "
+                      "no_price: not in Sigmalytic's scanned universe (ETFs, funds, small caps). Rows skipped in "
+                      "the file are options, cash or totals."),
+            "setup_state_note": SETUP_NOTE}
+
 TOOL_FUNCS: Dict[str, Callable[..., Dict[str, Any]]] = {
     "search_scan": tool_search_scan,
     "get_symbol_facts": tool_get_symbol_facts,
@@ -396,9 +574,28 @@ TOOL_FUNCS: Dict[str, Callable[..., Dict[str, Any]]] = {
     "lookup_companies": tool_lookup_companies,
     "list_daily_reports": tool_list_daily_reports,
     "get_daily_report": tool_get_daily_report,
+    "review_holdings": tool_review_holdings,
 }
 
 TOOLS = [
+    {"type": "function", "function": {
+        "name": "review_holdings",
+        "description": "Reviews the attached broker positions file: for every stock position, the platform reads "
+                       "quantity and cost from the file and compares them with Sigmalytic's latest close, adding "
+                       "daily RSI(14), the scan's signals and the setup state. All numbers are computed by code. "
+                       "Use for questions about losers, gains, cost, or holdings below an RSI level. Default: losing "
+                       "positions only, largest % loss first.",
+        "parameters": {"type": "object", "properties": {
+            "losers_only": {"type": "boolean", "description": "Only positions below cost (default true)."},
+            "rsi_below": {"type": "number", "description": "Only positions whose daily RSI(14) is below this."},
+            "exclude_no_setup": {"type": "boolean", "description": "Leave out positions with 'No setup'."},
+            "signals": {"type": "array", "items": {"type": "string", "enum": SIGNAL_KEYS},
+                        "description": "Only positions with one of these scan signals."},
+            "sort_by": {"type": "string", "enum": ["pct_loss", "dollar_loss", "rsi"],
+                        "description": "pct_loss (default): largest % loss first; dollar_loss: largest $ loss "
+                                       "first; rsi: lowest RSI first."},
+            "limit": {"type": "integer"}},
+            "additionalProperties": False}}},
     {"type": "function", "function": {
         "name": "search_scan",
         "description": "Search the latest Sigma Radar scan of the Russell 1000 (one row per flagged signal). Use for "
@@ -417,7 +614,10 @@ TOOLS = [
             "max_sessions_held": {"type": "integer", "description": "Only levels first crossed within this many "
                                                                    "sessions (0 = crossed in the latest session)."},
             "new_only": {"type": "boolean", "description": "Only levels first crossed in the latest session."},
-            "sort_by": {"type": "string", "enum": ["newest", "pct_beyond", "symbol"]},
+            "sort_by": {"type": "string", "enum": ["newest", "pct_beyond", "symbol", "rsi"]},
+            "rsi_below": {"type": "number", "description": "Only stocks whose daily RSI(14) is below this, e.g. 40."},
+            "exclude_no_setup": {"type": "boolean", "description": "Leave out stocks whose setup state is "
+                                                                    "'No setup'."},
             "limit": {"type": "integer", "description": "Rows to return, 1-60 (default 25). total_matched always "
                                                        "gives the full count."}},
             "additionalProperties": False}}},
@@ -485,7 +685,10 @@ SYSTEM_PROMPT = (
     "is a separate reading from the signal and can point the other way; say so in one line when a table mixes them. "
     "'No setup' means the setup engine found no setup now.\n"
     "12. The tickers line for an uploaded file lists every ticker code read from it; check them all in one "
-    "search_scan call, never split them."
+    "search_scan call, never split them.\n"
+    "13. For a positions file and questions about losers, gains, cost or RSI, call review_holdings (one call); its "
+    "gain/loss, totals and RSI are computed by code, so use them as given and never compute your own. Describe "
+    "the positions; never suggest selling, buying or holding any of them."
 )
 
 
@@ -1015,6 +1218,7 @@ def ask(question: str, history: Any = None, admin: str = "", attachment: Any = N
     except ValueError as exc:
         return {"ok": False, "error": str(exc)}
 
+    _CURRENT_FILE.set(f)
     model = model_name(provider)
     hist = _clean_history(history)
     messages: List[Dict[str, Any]] = [*hist, {"role": "user", "content": user_content(provider, q, f)}]

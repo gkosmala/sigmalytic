@@ -193,3 +193,35 @@ def test_hourly_fetch_windows_and_ui_include_two_and_four_hour_bars():
     assert '"1Hour": 1300, "2Hour": 1300, "4Hour": 1300' in service_source
     assert '("2 Hours", "2Hour")' in frontend_source
     assert '("4 Hours", "4Hour")' in frontend_source
+
+
+def test_daily_scan_stores_rsi_and_close_for_every_scanned_symbol():
+    """ADDED (2026-10-29): the scan keeps daily RSI(14) and the latest close per symbol for the AI assistant,
+    from the bars it already fetched -- including symbols with no signal."""
+    symbols = ["UPPP", "DOWN"]
+    closes = {"UPPP": [100 + i for i in range(40)], "DOWN": [200 - i for i in range(40)]}
+
+    def fake_fetch(symbol_chunk, **kwargs):
+        return {s: [{"c": float(c), "t": f"2026-09-{(i % 28) + 1:02d}T20:00:00Z"} for i, c in enumerate(closes[s])]
+                for s in symbol_chunk}
+
+    fake_radar_service = SimpleNamespace(
+        _redis_client=None,
+        compute_symbol_signals=lambda *args, **kwargs: [],
+        fetch_bars_batch=fake_fetch,
+        load_russell1000=lambda: symbols,
+        min_bars_required_for=lambda requested: 1,
+        trim_incomplete_bar=lambda bars, timeframe: bars,
+        _radar_bar_count=lambda: 289,
+    )
+    fake_engine_module = SimpleNamespace(WyckoffVerdictEngine=lambda: object())
+    with patch.dict(sys.modules, {
+        "backend.radar_service": fake_radar_service,
+        "backend.research_engine.wyckoff_verdict_engine": fake_engine_module,
+    }):
+        result = run_weis_radar_scan()
+
+    ind = result["indicators"]
+    assert ind["available"] and ind["rsi_period"] == 14
+    assert ind["symbols"]["UPPP"]["rsi14"] == 100.0 and ind["symbols"]["DOWN"]["rsi14"] == 0.0
+    assert ind["symbols"]["DOWN"]["close"] == 161.0 and ind["symbols"]["DOWN"]["bar_date"].startswith("2026-09")

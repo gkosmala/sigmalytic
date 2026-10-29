@@ -527,3 +527,80 @@ def test_share_class_tickers_match_the_universe(monkeypatch):
                                                                      "sector": "Financials", "industry": "x"}})
     out = a.tool_search_scan(symbols=["BRK.B", "BRK/B", "MOG.A"])
     assert out["not_flagged"] == ["BRKB"] and out["not_in_universe"] == ["MOG.A"]
+
+
+# ── RSI, losers review ──
+
+from backend.indicators import rsi_wilder
+
+SCAN_RSI = {**SCAN, "indicators": {"timeframe": "1Day", "rsi_period": 14, "available": True, "symbols": {
+    "NVDA": {"rsi14": 31.5, "close": 171.25, "bar_date": "2026-10-28"},
+    "AMD": {"rsi14": 62.0, "close": 240.1, "bar_date": "2026-10-28"},
+    "JPM": {"rsi14": 38.2, "close": 301.0, "bar_date": "2026-10-28"},
+    "MSFT": {"rsi14": 35.0, "close": 400.0, "bar_date": "2026-10-28"}}}}
+
+POSITIONS = (b"Account,Symbol,Description,Qty #,Price Paid $,Cost Basis Total\n"
+             b"IRA,NVDA,NVIDIA,10,200.00,\"$2,000.00\"\n"
+             b"TAX,NVDA,NVIDIA,10,,1800.00\n"
+             b"IRA,AMD,AMD,5,250.00,\n"
+             b"IRA,JPM,JPMorgan,4,,1400.00\n"
+             b"IRA,MSFT,Microsoft,2,500.00,\n"
+             b"IRA,SPY,SPDR,3,500,1500\n"
+             b"IRA,NVDA 01/15/2027 150.00 C,Call,1,10.00,1000\n"
+             b"IRA,Cash & Cash Investments,,,,\n")
+
+
+def test_rsi_matches_published_example():
+    closes = [44.34, 44.09, 44.15, 43.61, 44.33, 44.83, 45.10, 45.42, 45.84, 46.08, 45.89, 46.03, 45.61, 46.28,
+              46.28, 46.00]
+    assert rsi_wilder(closes[:15]) == pytest.approx(70.5, abs=0.1)      # StockCharts: 70.53
+    assert rsi_wilder(closes) == pytest.approx(66.3, abs=0.1)           # StockCharts: 66.32
+    assert rsi_wilder([1, 2, 3]) is None and rsi_wilder(range(1, 30)) == 100.0
+
+
+def test_parse_positions_adds_accounts_and_skips_options_and_cash():
+    p = a.parse_positions(a.prepare_attachment(_att("p.csv", POSITIONS))["text"])
+    assert p["positions"]["NVDA"] == {"qty": 20.0, "cost_total": 3800.0, "cost_known": True}
+    assert p["positions"]["AMD"]["cost_total"] == 1250.0 and p["skipped_rows"] == 2
+
+
+def test_review_holdings_losers_rsi_and_setup_filters(monkeypatch):
+    monkeypatch.setattr(a, "_load_scan", lambda: SCAN_RSI)
+    a._CURRENT_FILE.set(a.prepare_attachment(_att("p.csv", POSITIONS)))
+    out = a.tool_review_holdings()
+    syms = [r["symbol"] for r in out["rows"]]
+    assert syms == ["MSFT", "JPM", "NVDA", "AMD"]          # largest % loss first (-20%, -14%, -9.87%, -3.96%)
+    nv = next(r for r in out["rows"] if r["symbol"] == "NVDA")
+    assert nv["avg_cost"] == 190.0 and nv["gain_loss_usd"] == -375.0 and nv["gain_loss_pct"] == -9.87
+    assert out["no_price"] == ["SPY"] and out["matched_gain_loss_usd"] == pytest.approx(-200 - 196 - 375 - 49.5)
+    assert a.tool_review_holdings(losers_only=False)["total_matched"] == 4
+    low = a.tool_review_holdings(rsi_below=40, exclude_no_setup=True)
+    assert [r["symbol"] for r in low["rows"]] == ["NVDA"]     # MSFT and JPM are under 40 but have No setup
+    assert [r["symbol"] for r in a.tool_review_holdings(sort_by="dollar_loss")["rows"]][0] == "NVDA"
+    assert [r["symbol"] for r in a.tool_review_holdings(losers_only=False, sort_by="rsi")["rows"]][0] == "NVDA"
+
+
+def test_review_holdings_needs_a_file_and_rsi(monkeypatch):
+    a._CURRENT_FILE.set(None)
+    assert "No positions file" in a.tool_review_holdings()["error"]
+    monkeypatch.setattr(a, "_load_scan", lambda: SCAN)          # a scan from before the RSI update
+    a._CURRENT_FILE.set(a.prepare_attachment(_att("p.csv", POSITIONS)))
+    assert "no RSI" in a.tool_review_holdings()["error"]
+    assert "no RSI" in a.tool_search_scan(rsi_below=40)["error"]
+
+
+def test_search_scan_rsi_and_no_setup_filters(monkeypatch):
+    monkeypatch.setattr(a, "_load_scan", lambda: SCAN_RSI)
+    out = a.tool_search_scan(rsi_below=40)
+    assert {r["symbol"] for r in out["rows"]} == {"NVDA", "JPM"} and all("rsi14" in r for r in out["rows"])
+    assert {r["symbol"] for r in a.tool_search_scan(rsi_below=40, exclude_no_setup=True)["rows"]} == {"NVDA"}
+
+
+def test_losers_answer_passes_the_number_check(monkeypatch):
+    monkeypatch.setattr(a, "_load_scan", lambda: SCAN_RSI)
+    fake = FakeModel([_call("review_holdings", {"rsi_below": 40, "exclude_no_setup": True}),
+                      {"text": "One losing holding has RSI below 40 and a setup: NVDA, down 9.87% "
+                               "($-375.00) from an average cost of $190.00, RSI 31.5."}])
+    monkeypatch.setattr(a, "_call_model", fake)
+    out = a.ask("Which losers are below RSI 40?", attachment=_att("p.csv", POSITIONS))
+    assert out["ok"], out
