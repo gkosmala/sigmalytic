@@ -407,6 +407,10 @@ def run_weis_radar_scan() -> dict:
     )
     symbols = load_russell1000()
     results = []
+    from backend.indicators import rsi_wilder
+    RSI_PERIOD = 14
+    rsi_enabled = config["timeframe"] == "1Day"     # the RSI the assistant reports is the daily RSI(14)
+    indicators = {}
     trade_candidates = []
     quantum_candidates = []
     try:
@@ -456,6 +460,16 @@ def run_weis_radar_scan() -> dict:
                     wyckoff_engine=engine,
                 )
                 hits = _normalize_signal_hits(found, bars[-1]["c"])
+                # ADDED (2026-10-29): daily RSI(14) for every scanned symbol, from the same completed bars --
+                # no extra data request. Read by the AI Sigmalytic Assistant (holdings review, RSI filters).
+                if rsi_enabled:
+                    try:
+                        rsi = rsi_wilder([b.get("c") for b in bars], RSI_PERIOD)
+                        if rsi is not None:
+                            indicators[symbol] = {"rsi14": rsi, "close": round(float(bars[-1]["c"]), 2),
+                                                  "bar_date": str(bars[-1].get("t") or "")[:10]}
+                    except Exception:
+                        pass
                 state_row = (weis_radar_states.state_row(symbol, bars, state_bar_count)
                              if state_enabled else None)
                 if state_row:
@@ -576,6 +590,8 @@ def run_weis_radar_scan() -> dict:
     payload = {
         "ok": True,
         "weis_states": weis_states,
+        "indicators": {"timeframe": config["timeframe"], "rsi_period": 14, "available": rsi_enabled,
+                       "symbols": indicators},
         "scanned": scanned,
         "hits": len(results),
         "errors": errors,
