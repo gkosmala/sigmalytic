@@ -5951,8 +5951,9 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             "marginBottom": "6px",
             "textShadow": "0 0 6px rgba(52,211,153,.85), 0 0 14px rgba(52,211,153,.55), 0 0 28px rgba(52,211,153,.35)"}),
         html.Div("Ask a question in plain English. The AI assistant looks up Sigmalytic's latest scan, symbol levels, "
-                 "setup states and stored daily reports, then answers. Every number is checked against the data before "
-                 "it is shown, and every question is logged. Read-only: nothing is traded, changed or posted.",
+                 "setup states and stored daily reports, then answers. You can also attach an image, PDF, spreadsheet "
+                 "or document to ask about. Every number is checked against the data before it is shown, and every "
+                 "question is logged. Read-only: nothing is traded, changed or posted.",
                  style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"}),
         dcc.Store(id="assistant-history", storage_type="session", data=[]),
         dcc.Loading(html.Div(id="assistant-thread", style={"fontSize": "13px", "color": WHITE}),
@@ -5962,6 +5963,22 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                      style={"width": "100%", "minHeight": "70px", "boxSizing": "border-box", "marginTop": "10px",
                             "background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}", "borderRadius": "8px",
                             "padding": "10px 12px", "color": WHITE, "fontSize": "13px", "resize": "vertical"}),
+        dcc.Store(id="assistant-attachment", storage_type="memory", data=None),
+        html.Div([
+            dcc.Upload(id="assistant-upload", multiple=False, max_size=10 * 1024 * 1024,
+                       accept=".png,.jpg,.jpeg,.gif,.webp,.pdf,.csv,.tsv,.txt,.md,.json,.xlsx,.docx",
+                       children=html.Div("Attach a file: image, PDF, CSV, Excel, Word or text (drag here or click)"),
+                       style={"border": "1px dashed rgba(52,211,153,.55)", "borderRadius": "8px",
+                              "padding": "9px 12px", "fontSize": "12px", "color": "#34D399", "cursor": "pointer",
+                              "textAlign": "center"}),
+            html.Div([
+                html.Span(id="assistant-attachment-label", style={"fontSize": "12px", "color": WHITE}),
+                html.Button("Remove", id="assistant-attachment-remove", n_clicks=0,
+                            style={"background": "transparent", "color": MUTED, "border": f"1px solid {BORDER}",
+                                   "borderRadius": "6px", "padding": "3px 10px", "fontSize": "11px",
+                                   "cursor": "pointer", "marginLeft": "10px"}),
+            ], id="assistant-attachment-row", style={"display": "none", "marginTop": "8px"}),
+        ], style={"marginTop": "10px"}),
         html.Div([
             html.Button("Ask", id="assistant-ask-btn", n_clicks=0,
                         style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
@@ -11282,6 +11299,40 @@ def sort_weis_state_by_bars_ago(n_clicks, rows):
     return _weis_state_rows(rows, "asc" if asc else "desc"), ("Bars ago \u25B2" if asc else "Bars ago \u25BC")
 
 
+ASSISTANT_UPLOAD_LIMITS = {"png": 5, "jpg": 5, "jpeg": 5, "gif": 5, "webp": 5, "pdf": 10, "csv": 5, "tsv": 5,
+                           "txt": 5, "md": 5, "json": 5, "xlsx": 5, "docx": 5}   # MB; the backend enforces these too
+
+
+@app.callback(Output("assistant-attachment", "data"),
+              Output("assistant-attachment-label", "children"),
+              Output("assistant-attachment-row", "style"),
+              Output("assistant-upload", "contents"),
+              Input("assistant-upload", "contents"),
+              Input("assistant-attachment-remove", "n_clicks"),
+              Input("assistant-clear-btn", "n_clicks"),
+              State("assistant-upload", "filename"),
+              prevent_initial_call=True)
+def handle_assistant_attachment(contents, remove_clicks, clear_clicks, filename):
+    """Keeps one attached file for the conversation until it is removed or a new conversation starts. The file is
+    sent with each question while attached, so follow-up questions can refer to it."""
+    hidden = {"display": "none", "marginTop": "8px"}
+    if callback_context.triggered_id != "assistant-upload" or not contents:
+        return None, "", hidden, None
+    name = os.path.basename(filename or "file")
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    if ext not in ASSISTANT_UPLOAD_LIMITS:
+        return None, f"{name}: this file type is not supported.", {"display": "flex", "alignItems": "center",
+                                                                    "marginTop": "8px"}, None
+    approx_mb = len(contents.split(",", 1)[-1]) * 3 / 4 / (1024 * 1024)
+    if approx_mb > ASSISTANT_UPLOAD_LIMITS[ext]:
+        return None, (f"{name} is {approx_mb:.1f} MB; the limit for this type is {ASSISTANT_UPLOAD_LIMITS[ext]} MB."), \
+            {"display": "flex", "alignItems": "center", "marginTop": "8px"}, None
+    size = f"{approx_mb:.1f} MB" if approx_mb >= 1 else f"{max(1, round(approx_mb * 1024))} KB"
+    label = f"Attached: {name} ({size}). Used for every question until you remove it."
+    return {"name": name, "data": contents}, label, {"display": "flex", "alignItems": "center",
+                                                      "marginTop": "8px"}, None
+
+
 @app.callback(Output("assistant-history", "data"),
               Output("assistant-question", "value"),
               Input("assistant-ask-btn", "n_clicks"),
@@ -11289,8 +11340,9 @@ def sort_weis_state_by_bars_ago(n_clicks, rows):
               State("assistant-question", "value"),
               State("assistant-history", "data"),
               State("s-session", "data"),
+              State("assistant-attachment", "data"),
               prevent_initial_call=True)
-def handle_assistant_ask(ask_clicks, clear_clicks, question, history, session):
+def handle_assistant_ask(ask_clicks, clear_clicks, question, history, session, attachment=None):
     """Admin-only: sends the question and the last few turns to the backend assistant; keeps the thread in the
     browser session. Error turns are shown but never sent back to the model."""
     if callback_context.triggered_id == "assistant-clear-btn":
@@ -11301,9 +11353,15 @@ def handle_assistant_ask(ask_clicks, clear_clicks, question, history, session):
     history = list(history or [])
     convo = [{"role": m["role"], "content": m["content"]} for m in history
              if m.get("role") in ("user", "assistant")][-8:]
-    history.append({"role": "user", "content": q})
+    turn = {"role": "user", "content": q}
+    if attachment:
+        turn["attachment"] = attachment.get("name")
+    history.append(turn)
     try:
-        r = req.post(f"{BACKEND_HTTP}/api/admin/assistant/ask", json={"question": q, "history": convo},
+        body = {"question": q, "history": convo}
+        if attachment:
+            body["attachment"] = attachment
+        r = req.post(f"{BACKEND_HTTP}/api/admin/assistant/ask", json=body,
                      headers=_auth_headers(session), timeout=150)
         if r.status_code == 401:
             reply = {"role": "error", "content": "Not signed in, or session expired. Please sign in again."}
@@ -11316,7 +11374,7 @@ def handle_assistant_ask(ask_clicks, clear_clicks, question, history, session):
             meta = {"lookups": d.get("lookups") or [], "usage": d.get("usage") or {}}
             if d.get("ok"):
                 reply = {"role": "assistant", "content": d.get("answer") or "", "meta": meta,
-                         "disclaimer": d.get("disclaimer") or ""}
+                         "disclaimer": d.get("disclaimer") or "", "notice": d.get("notice") or ""}
             else:
                 reply = {"role": "error", "content": d.get("error") or "No answer.", "meta": meta}
     except Exception as exc:
@@ -11348,12 +11406,15 @@ def render_assistant_thread(history):
     for m in history:
         role = m.get("role")
         if role == "user":
-            out.append(html.Div(m.get("content", ""), style={
+            text = m.get("content", "") + (f"\n\nAttached: {m['attachment']}" if m.get("attachment") else "")
+            out.append(html.Div(text, style={
                 "alignSelf": "flex-end", "maxWidth": "85%", "background": "rgba(255,255,255,.08)",
                 "border": f"1px solid {BORDER}", "borderRadius": "10px", "padding": "8px 12px",
                 "whiteSpace": "pre-wrap"}))
         elif role == "assistant":
             out.append(html.Div([dcc.Markdown(m.get("content", ""), style={"lineHeight": "1.55"}),
+                                 html.Div(m["notice"], style={"fontSize": "11px", "color": YELLOW_DIM,
+                                                              "marginTop": "6px"}) if m.get("notice") else None,
                                  _assistant_meta_line(m.get("meta")),
                                  html.Div(m.get("disclaimer", ""), style={"fontSize": "10.5px", "color": MUTED,
                                                                           "marginTop": "4px"})],

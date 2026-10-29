@@ -3100,7 +3100,7 @@ def assistant_ask(payload: dict, admin: str = Depends(require_admin)):
     from backend import assistant
 
     p = payload or {}
-    return assistant.ask(p.get("question"), p.get("history"), admin=admin)
+    return assistant.ask(p.get("question"), p.get("history"), admin=admin, attachment=p.get("attachment"))
 
 
 @app.get("/api/admin/assistant/log")
