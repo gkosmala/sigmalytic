@@ -2,8 +2,8 @@
 """
 backend/assistant.py
 --------------------
-Sigmalytic Assistant (admin only, Level 1): plain-English questions answered by ChatGPT (OpenAI) using ONLY
-Sigmalytic's own data.
+Sigmalytic Assistant (admin only, Level 1): plain-English questions answered by Claude (Anthropic) or ChatGPT
+(OpenAI) using ONLY Sigmalytic's own data. Claude is the default.
 
 How an answer is made
   1. The question (plus the last few turns of the conversation) goes to the model with five read-only lookups it
@@ -20,11 +20,14 @@ Nothing here places orders, writes platform data, or posts anywhere. Every quest
 (assistant:log) so answers can be reviewed later.
 
 Settings (Render environment variables on the backend service)
-  OPENAI_API_KEY               required
-  ASSISTANT_MODEL              default "gpt-5.6-luna" (OpenAI's lowest-priced model in content_hub.MODEL_PRICES)
+  ANTHROPIC_API_KEY            for Claude (already set: the Content Hub uses it)
+  OPENAI_API_KEY               for ChatGPT
+  ASSISTANT_PROVIDER           optional: "anthropic" or "openai". Unset: read from ASSISTANT_MODEL, else Claude when
+                               ANTHROPIC_API_KEY is set
+  ASSISTANT_MODEL              default "claude-sonnet-5-5" for Claude, "gpt-5.6-luna" for ChatGPT
+  ASSISTANT_EFFORT             optional thinking effort, e.g. "low" (Claude output_config.effort / OpenAI reasoning_effort)
   ASSISTANT_DAILY_LIMIT_USD    default 5     spending cap per calendar day, Eastern time
   ASSISTANT_DAILY_QUESTIONS    default 100   question cap per day (also the cap when a model's price is unknown)
-  ASSISTANT_REASONING_EFFORT   optional      passed to the model as reasoning_effort (e.g. "low")
 """
 
 from __future__ import annotations
@@ -44,7 +47,8 @@ from backend import content_hub as ch
 
 ET = ZoneInfo("America/New_York")
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
-DEFAULT_MODEL = "gpt-5.6-luna"
+DEFAULT_MODELS = {"anthropic": "claude-sonnet-5-5", "openai": "gpt-5.6-luna"}
+KEY_ENV = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}
 LOG_KEY = "assistant:log"
 LOG_KEEP = 500
 SPEND_KEY = "assistant:spend:{day}"
@@ -60,8 +64,27 @@ DISCLAIMER = ch.SHORT_DISCLAIMER
 EXTRA_BLOCKED = re.compile(r"\b(?:wyckoff|weis)\b", re.IGNORECASE)
 
 
-def model_name() -> str:
-    return (os.getenv("ASSISTANT_MODEL") or DEFAULT_MODEL).strip()
+def provider_name() -> Optional[str]:
+    """'anthropic' (Claude) or 'openai' (ChatGPT). ASSISTANT_PROVIDER decides; otherwise the provider is read from
+    ASSISTANT_MODEL's name; otherwise Claude when its key is set, then ChatGPT."""
+    want = (os.getenv("ASSISTANT_PROVIDER") or "").strip().lower()
+    if want in ("anthropic", "claude"):
+        return "anthropic"
+    if want in ("openai", "chatgpt"):
+        return "openai"
+    model = (os.getenv("ASSISTANT_MODEL") or "").strip().lower()
+    if model.startswith("claude"):
+        return "anthropic"
+    if model.startswith(("gpt", "o1", "o3", "o4")):
+        return "openai"
+    if os.getenv("ANTHROPIC_API_KEY"):
+        return "anthropic"
+    return "openai" if os.getenv("OPENAI_API_KEY") else None
+
+
+def model_name(provider: Optional[str] = None) -> str:
+    provider = provider or provider_name() or "anthropic"
+    return (os.getenv("ASSISTANT_MODEL") or DEFAULT_MODELS[provider]).strip()
 
 
 def _redis():
@@ -471,22 +494,19 @@ def price_for(model: str) -> Optional[Tuple[float, float]]:
 
 # ───────────────────────────── the model call ─────────────────────────────
 
-def _chat(messages: List[Dict[str, Any]], model: str) -> Dict[str, Any]:
+# ───────────────────────────── the model call (Claude or ChatGPT) ─────────────────────────────
+
+def _post(url: str, payload: Dict[str, Any], headers: Dict[str, str], optional_key: Optional[str]) -> Any:
+    """POST with the retries both providers need: wait on 429/529, and drop an optional setting a model rejects
+    with 400 (a 400 is not billed)."""
     import requests
-    payload: Dict[str, Any] = {"model": model, "messages": messages, "tools": TOOLS, "tool_choice": "auto",
-                               "max_completion_tokens": 6000}
-    effort = (os.getenv("ASSISTANT_REASONING_EFFORT") or "").strip().lower()
-    if effort:
-        payload["reasoning_effort"] = effort
     for attempt in range(3):
-        r = requests.post(OPENAI_URL, json=payload, timeout=90,
-                          headers={"Authorization": "Bearer " + os.environ["OPENAI_API_KEY"],
-                                   "Content-Type": "application/json"})
+        r = requests.post(url, json=payload, headers=headers, timeout=90)
         status = getattr(r, "status_code", 200)
-        if status == 400 and "reasoning_effort" in payload and attempt < 2:
-            payload.pop("reasoning_effort", None)   # this model rejects the setting; a 400 is not billed
+        if status == 400 and optional_key and optional_key in payload and attempt < 2:
+            payload.pop(optional_key, None)
             continue
-        if status == 429 and attempt < 2:
+        if status in (429, 529) and attempt < 2:
             try:
                 wait = min(float(r.headers.get("retry-after", "10")), 30.0)
             except (TypeError, ValueError):
@@ -494,21 +514,109 @@ def _chat(messages: List[Dict[str, Any]], model: str) -> Dict[str, Any]:
             time.sleep(wait)
             continue
         break
+    return r
+
+
+def _raise_for(r: Any, who: str) -> None:
+    status = getattr(r, "status_code", 200)
     if status >= 400:
         try:
             detail = str((r.json().get("error") or {}).get("message") or "")
         except Exception:
             detail = ""
-        raise RuntimeError(f"OpenAI returned {status}" + (f": {detail}" if detail else "."))
-    return r.json()
+        raise RuntimeError(f"{who} returned {status}" + (f": {detail}" if detail else "."))
+
+
+def anthropic_tools() -> List[Dict[str, Any]]:
+    return [{"name": t["function"]["name"], "description": t["function"]["description"],
+             "input_schema": t["function"]["parameters"]} for t in TOOLS]
+
+
+def parse_anthropic(body: Dict[str, Any]) -> Dict[str, Any]:
+    """Claude Messages API reply -> one provider-neutral turn."""
+    content = body.get("content") or []
+    u = body.get("usage") or {}
+    tokens_in = sum(int(u.get(k, 0) or 0) for k in ("input_tokens", "cache_read_input_tokens",
+                                                    "cache_creation_input_tokens"))
+    calls = [{"id": b.get("id"), "name": b.get("name", ""), "input": b.get("input"), "input_error": None}
+             for b in content if b.get("type") == "tool_use"]
+    return {"text": "".join(b.get("text", "") for b in content if b.get("type") == "text").strip(),
+            "calls": calls, "in": tokens_in, "out": int(u.get("output_tokens", 0) or 0),
+            "reasoning": int((u.get("output_tokens_details") or {}).get("thinking_tokens", 0) or 0),
+            "assistant_message": {"role": "assistant", "content": content}}
+
+
+def parse_openai(body: Dict[str, Any]) -> Dict[str, Any]:
+    """ChatGPT Chat Completions reply -> one provider-neutral turn."""
+    msg = (body.get("choices") or [{}])[0].get("message") or {}
+    u = body.get("usage") or {}
+    calls = []
+    for c in msg.get("tool_calls") or []:
+        fn = c.get("function") or {}
+        try:
+            args, err = json.loads(fn.get("arguments") or "{}"), None
+        except ValueError as exc:
+            args, err = None, f"arguments were not valid JSON: {exc}"
+        calls.append({"id": c.get("id"), "name": fn.get("name", ""), "input": args, "input_error": err})
+    return {"text": (msg.get("content") or "").strip(), "calls": calls,
+            "in": int(u.get("prompt_tokens", 0) or 0), "out": int(u.get("completion_tokens", 0) or 0),
+            "reasoning": int((u.get("completion_tokens_details") or {}).get("reasoning_tokens", 0) or 0),
+            "assistant_message": {"role": "assistant", "content": msg.get("content") or "",
+                                  **({"tool_calls": msg["tool_calls"]} if msg.get("tool_calls") else {})}}
+
+
+def _call_model(provider: str, messages: List[Dict[str, Any]], model: str) -> Dict[str, Any]:
+    """One model turn. `messages` holds the conversation in the provider's own format (no system message)."""
+    if provider == "anthropic":
+        payload: Dict[str, Any] = {"model": model, "max_tokens": 4000, "system": SYSTEM_PROMPT,
+                                   "messages": messages, "tools": anthropic_tools()}
+        effort = (os.getenv("ASSISTANT_EFFORT") or "").strip().lower()
+        if effort:
+            payload["output_config"] = {"effort": effort}
+        r = _post("https://api.anthropic.com/v1/messages", payload,
+                  {"x-api-key": os.environ["ANTHROPIC_API_KEY"], "anthropic-version": "2023-06-01",
+                   "content-type": "application/json"}, "output_config")
+        _raise_for(r, "Anthropic")
+        return parse_anthropic(r.json())
+    payload = {"model": model, "messages": [{"role": "system", "content": SYSTEM_PROMPT}, *messages],
+               "tools": TOOLS, "tool_choice": "auto", "max_completion_tokens": 6000}
+    effort = (os.getenv("ASSISTANT_EFFORT") or os.getenv("ASSISTANT_REASONING_EFFORT") or "").strip().lower()
+    if effort:
+        payload["reasoning_effort"] = effort
+    r = _post(OPENAI_URL, payload, {"Authorization": "Bearer " + os.environ["OPENAI_API_KEY"],
+                                    "Content-Type": "application/json"}, "reasoning_effort")
+    _raise_for(r, "OpenAI")
+    return parse_openai(r.json())
+
+
+def tool_results_messages(provider: str, results: List[Tuple[str, str]]) -> List[Dict[str, Any]]:
+    """Lookup results, in the provider's format: Claude takes one user turn of tool_result blocks, ChatGPT one
+    tool message per call."""
+    if provider == "anthropic":
+        return [{"role": "user", "content": [{"type": "tool_result", "tool_use_id": cid, "content": text}
+                                             for cid, text in results]}]
+    return [{"role": "tool", "tool_call_id": cid, "content": text} for cid, text in results]
 
 
 def _clean_history(history: Any) -> List[Dict[str, str]]:
+    """Keeps plain user/assistant text turns only, starting with a user turn, with back-to-back turns of the same
+    role merged (Claude requires the roles to alternate)."""
     out: List[Dict[str, str]] = []
     for m in history if isinstance(history, list) else []:
         if isinstance(m, dict) and m.get("role") in ("user", "assistant") and isinstance(m.get("content"), str):
             out.append({"role": m["role"], "content": m["content"][:4000]})
-    return out[-MAX_HISTORY_MESSAGES:]
+    out = out[-MAX_HISTORY_MESSAGES:]
+    while out and out[0]["role"] != "user":
+        out.pop(0)
+    merged: List[Dict[str, str]] = []
+    for m in out:
+        if merged and merged[-1]["role"] == m["role"]:
+            merged[-1] = {"role": m["role"], "content": merged[-1]["content"] + "\n\n" + m["content"]}
+        else:
+            merged.append(m)
+    if merged and merged[-1]["role"] == "user":   # the new question follows; never two user turns in a row
+        merged.pop()
+    return merged
 
 
 def _summary(name: str, args: Dict[str, Any], result: Dict[str, Any]) -> str:
@@ -521,24 +629,44 @@ def _summary(name: str, args: Dict[str, Any], result: Dict[str, Any]) -> str:
     return f"{name}({', '.join(bits)}){tail}"
 
 
+def _run_lookup(call: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    args: Dict[str, Any] = {}
+    try:
+        if call.get("input_error"):
+            raise ValueError(call["input_error"])
+        if not isinstance(call.get("input"), dict):
+            raise ValueError("arguments must be an object")
+        args = call["input"]
+        func = TOOL_FUNCS.get(call.get("name", ""))
+        if func is None:
+            raise ValueError(f"unknown lookup {call.get('name')}")
+        return args, func(**args)
+    except Exception as exc:
+        return args, {"ok": False, "error": str(exc)[:200]}
+
+
 def ask(question: str, history: Any = None, admin: str = "") -> Dict[str, Any]:
     q = str(question or "").strip()
     if not q:
         return {"ok": False, "error": "Type a question first."}
     if len(q) > MAX_QUESTION_CHARS:
         return {"ok": False, "error": f"Keep questions under {MAX_QUESTION_CHARS} characters."}
-    if not os.getenv("OPENAI_API_KEY"):
-        return {"ok": False, "error": "OPENAI_API_KEY is not set on the backend service in Render."}
+    provider = provider_name()
+    if provider is None:
+        return {"ok": False, "error": "No AI key is set on the backend service in Render (ANTHROPIC_API_KEY for "
+                                      "Claude, or OPENAI_API_KEY for ChatGPT)."}
+    key = KEY_ENV[provider]
+    if not os.getenv(key):
+        return {"ok": False, "error": f"{key} is not set on the backend service in Render."}
     cap_usd, cap_n = _limits()
     usd_today, n_today = spent_today()
     if n_today >= cap_n or usd_today >= cap_usd:
         return {"ok": False, "error": f"Today's assistant limit is reached (${usd_today:.2f} of ${cap_usd:.2f}, "
                                       f"{n_today} of {cap_n} questions). It resets at midnight Eastern."}
 
-    model = model_name()
+    model = model_name(provider)
     hist = _clean_history(history)
-    messages: List[Dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}, *hist,
-                                      {"role": "user", "content": q}]
+    messages: List[Dict[str, Any]] = [*hist, {"role": "user", "content": q}]
     evidence: Dict[str, Any] = {"question": q, "conversation": [m["content"] for m in hist], "lookups": []}
     lookups: List[str] = []
     tokens_in = tokens_out = reasoning = 0
@@ -553,38 +681,24 @@ def ask(question: str, history: Any = None, admin: str = "") -> Dict[str, Any]:
                 error = "The question took too long to answer. Try a narrower question."
                 break
             rounds += 1
-            body = _chat(messages, model)
-            u = body.get("usage") or {}
-            tokens_in += int(u.get("prompt_tokens", 0) or 0)
-            tokens_out += int(u.get("completion_tokens", 0) or 0)
-            reasoning += int((u.get("completion_tokens_details") or {}).get("reasoning_tokens", 0) or 0)
-            msg = (body.get("choices") or [{}])[0].get("message") or {}
-            calls = msg.get("tool_calls") or []
-            if calls and rounds <= MAX_ROUNDS:
-                messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls})
-                for c in calls:
-                    fn = (c.get("function") or {})
-                    name = fn.get("name", "")
-                    args: Dict[str, Any] = {}
-                    try:
-                        parsed = json.loads(fn.get("arguments") or "{}")
-                        if not isinstance(parsed, dict):
-                            raise ValueError("arguments must be an object")
-                        args = parsed
-                        func = TOOL_FUNCS.get(name)
-                        if func is None:
-                            raise ValueError(f"unknown lookup {name}")
-                        result = func(**args)
-                    except Exception as exc:
-                        result = {"ok": False, "error": str(exc)[:200]}
+            turn = _call_model(provider, messages, model)
+            tokens_in += turn["in"]
+            tokens_out += turn["out"]
+            reasoning += turn["reasoning"]
+            if turn["calls"] and rounds <= MAX_ROUNDS:
+                messages.append(turn["assistant_message"])
+                results: List[Tuple[str, str]] = []
+                for c in turn["calls"]:
+                    args, result = _run_lookup(c)
                     evidence["lookups"].append(result)
-                    lookups.append(_summary(name, args, result))
+                    lookups.append(_summary(c.get("name", ""), args, result))
                     text = json.dumps(result, default=str)
                     if len(text) > MAX_TOOL_RESULT_CHARS:
                         text = text[:MAX_TOOL_RESULT_CHARS] + '... [cut: ask for fewer rows]'
-                    messages.append({"role": "tool", "tool_call_id": c.get("id"), "content": text})
+                    results.append((c.get("id"), text))
+                messages.extend(tool_results_messages(provider, results))
                 continue
-            answer = (msg.get("content") or "").strip()
+            answer = turn["text"]
             if not answer:
                 error = "The model returned an empty answer."
                 break
@@ -604,8 +718,8 @@ def ask(question: str, history: Any = None, admin: str = "") -> Dict[str, Any]:
     price = price_for(model)
     cost = None if price is None else round(tokens_in / 1e6 * price[0] + tokens_out / 1e6 * price[1], 5)
     _record_spend(cost)
-    usage = {"model": model, "input_tokens": tokens_in, "output_tokens": tokens_out, "reasoning_tokens": reasoning,
-             "cost_usd": cost, "seconds": round(time.time() - started, 1)}
+    usage = {"provider": provider, "model": model, "input_tokens": tokens_in, "output_tokens": tokens_out,
+             "reasoning_tokens": reasoning, "cost_usd": cost, "seconds": round(time.time() - started, 1)}
 
     if error:
         result = {"ok": False, "error": error, "lookups": lookups, "usage": usage}

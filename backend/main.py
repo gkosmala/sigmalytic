@@ -3093,7 +3093,7 @@ def content_hub_generate(payload: dict, _admin: str = Depends(require_admin)):
 @app.post("/api/admin/assistant/ask")
 def assistant_ask(payload: dict, admin: str = Depends(require_admin)):
     """
-    Sigmalytic Assistant (admin only): a plain-English question answered by ChatGPT using only Sigmalytic's own
+    Sigmalytic Assistant (admin only): a plain-English question answered by Claude (or ChatGPT) using only Sigmalytic's own
     data (latest scan, symbol facts, setup state, stored daily reports). Read-only; every answer is checked before
     it is returned and logged. See backend/assistant.py.
     """
