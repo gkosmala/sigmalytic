@@ -74,10 +74,14 @@ MAX_QUESTION_CHARS = 2000
 MAX_TOOL_RESULT_CHARS = 40000
 MAX_SYMBOL_ROWS = 600          # a holdings check returns every match for the named tickers, up to this many
 MAX_FILE_TICKERS = 1500
-SETUP_NOTE = ("setup_state is a separate reading from the platform's setup engine (the same as the Radar Status), "
-              "with its direction: Armed, Setting Up, Watching or Avoid, each long or short. It can point the other "
-              "way from the signal (a Breakdown can be 'Armed long' after closing back inside). 'No setup' means the "
-              "engine found no setup now.")
+SETUP_NOTE = ("setup_state comes from the platform's setup engine (the same as the Radar Status) and is separate from "
+              "the signal. Direction: 'long' = a possible upside reversal (price dipped below a level and may "
+              "recover); 'short' = a possible downside reversal (price pushed above a level and may fail). State: "
+              "Watching = price is beyond the level and has not come back (unconfirmed); Setting Up = price closed "
+              "back across the level; Armed = it closed back and has held so far (the reversal is confirmed for "
+              "now); Avoid = the reversal failed (price followed through) or runs against the longer-term trend. "
+              "So 'Avoid long' does not support a recovery, 'Armed long' does, and 'Watching long' is undecided "
+              "(price is still below the level). 'No setup' = no level has been crossed.")
 SECTOR_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "russell1000_sector_industry.csv")
 
 DISCLAIMER = ch.SHORT_DISCLAIMER
@@ -739,7 +743,8 @@ _BASE_PROMPT = (
     "fewer or when asked. Keep explanations short.\n"
     "11. Whenever you show setup_state, show it exactly as given, with its direction (for example 'Armed long'). It "
     "is a separate reading from the signal and can point the other way; say so in one line when a table mixes them. "
-    "'No setup' means the setup engine found no setup now.\n"
+    "Read it by the definitions in setup_state_note: Watching is unconfirmed, so never treat a Watching state as "
+    "support for either view. 'No setup' means the setup engine found no setup now.\n"
     "12. The tickers line for an uploaded file lists every ticker code read from it; check them all in one "
     "search_scan call, never split them.\n"
     "13. For a positions file and questions about losers, gains, cost or RSI, call review_holdings (one call); its "
