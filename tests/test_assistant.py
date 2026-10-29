@@ -246,3 +246,114 @@ def test_main_routes_use_require_admin():
     for route in ('@app.post("/api/admin/assistant/ask")', '@app.get("/api/admin/assistant/log")'):
         block = src.split(route, 1)[1].split("\n@app.", 1)[0]
         assert "Depends(require_admin)" in block
+
+
+# ── uploaded files ──
+
+import base64 as _b64
+import io as _io
+import zipfile as _zip
+
+
+def _att(name, raw):
+    return {"name": name, "data": "data:x;base64," + _b64.b64encode(raw).decode()}
+
+
+def _xlsx_bytes():
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Watchlist"
+    ws.append(["Symbol", "My entry"])
+    ws.append(["NVDA", 175.5])
+    buf = _io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _docx_bytes(text):
+    buf = _io.BytesIO()
+    with _zip.ZipFile(buf, "w") as z:
+        z.writestr("word/document.xml", f'<w:document><w:body><w:p><w:r><w:t xml:space="preserve">{text}</w:t>'
+                                        f'</w:r></w:p></w:body></w:document>')
+    return buf.getvalue()
+
+
+def _pdf_bytes(text):
+    from reportlab.pdfgen import canvas
+    buf = _io.BytesIO()
+    c = canvas.Canvas(buf)
+    c.drawString(72, 720, text)
+    c.save()
+    return buf.getvalue()
+
+
+PNG_1PX = _b64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
+
+
+def test_prepare_reads_each_file_type():
+    csv = a.prepare_attachment(_att("trades.csv", b"Symbol,Price\nNVDA,175.50\n"))
+    assert csv["kind"] == "text" and "175.50" in csv["text"] and csv["numbers_checked"]
+    xl = a.prepare_attachment(_att("list.xlsx", _xlsx_bytes()))
+    assert "Sheet: Watchlist" in xl["text"] and "NVDA,175.5" in xl["text"]
+    doc = a.prepare_attachment(_att("notes.docx", _docx_bytes("Entry at 175.50 &amp; stop")))
+    assert "Entry at 175.50 & stop" in doc["text"]
+    pdf = a.prepare_attachment(_att("r.pdf", _pdf_bytes("NVDA closed at 171.25 on the report date, a full line.")))
+    assert pdf["kind"] == "pdf" and "171.25" in pdf["text"] and pdf["numbers_checked"] and pdf["pages"] == 1
+    img = a.prepare_attachment(_att("chart.png", PNG_1PX))
+    assert img["kind"] == "image" and img["numbers_checked"] is False and img["data"]
+
+
+def test_prepare_refuses_bad_files():
+    assert a.prepare_attachment(None) is None
+    for att, msg in ((_att("x.exe", b"MZ"), "not supported"), ({"name": "a.csv", "data": "@@@"}, "damaged"),
+                     (_att("big.png", b"0" * (5 * 1024 * 1024 + 1)), "limit"), (_att("e.txt", b""), "empty"),
+                     (_att("bad.xlsx", b"not a zip"), "could not be opened")):
+        with pytest.raises(ValueError, match=msg):
+            a.prepare_attachment(att)
+
+
+def test_user_content_blocks_per_provider():
+    img = a.prepare_attachment(_att("chart.png", PNG_1PX))
+    pdf = a.prepare_attachment(_att("r.pdf", _pdf_bytes("Report text long enough to count as a text layer here.")))
+    csv = a.prepare_attachment(_att("t.csv", b"a,b\n1,2\n"))
+    assert a.user_content("anthropic", "q", None) == "q"
+    assert a.user_content("anthropic", "q", img)[0]["type"] == "image"
+    assert a.user_content("anthropic", "q", pdf)[0]["type"] == "document"
+    assert "<uploaded_file>" in a.user_content("anthropic", "q", csv)[0]["text"]
+    assert a.user_content("openai", "q", img)[0]["image_url"]["url"].startswith("data:image/png;base64,")
+    assert a.user_content("openai", "q", pdf)[0]["file"]["file_data"].startswith("data:application/pdf;base64,")
+    assert a.user_content("anthropic", "q", csv)[-1]["text"].endswith("q")
+
+
+def test_numbers_from_a_csv_upload_pass_the_check(monkeypatch):
+    fake = FakeModel([{"text": "Your file shows an entry of $175.50 for NVDA."}])
+    monkeypatch.setattr(a, "_call_model", fake)
+    out = a.ask("What's my NVDA entry?", attachment=_att("w.csv", b"Symbol,Entry\nNVDA,175.50\n"))
+    assert out["ok"] and out["attachment"]["numbers_checked"] and "notice" not in out
+    first = fake.sent[0][-1]["content"]
+    assert isinstance(first, list) and "<uploaded_file>" in first[0]["text"]
+
+
+def test_invented_numbers_with_a_csv_are_still_withheld(monkeypatch):
+    bad = {"text": "Your entry was $188.40."}
+    monkeypatch.setattr(a, "_call_model", FakeModel([bad, bad]))
+    out = a.ask("Entry?", attachment=_att("w.csv", b"Symbol,Entry\nNVDA,175.50\n"))
+    assert out["ok"] is False and out["withheld"]
+
+
+def test_image_answers_are_labelled_not_number_checked_but_still_advice_checked(monkeypatch):
+    monkeypatch.setattr(a, "_call_model", FakeModel([{"text": "The chart shows a high near $512.40."}]))
+    out = a.ask("What does this chart show?", attachment=_att("c.png", PNG_1PX))
+    assert out["ok"] and "could not be checked" in out["notice"]
+    bad = {"text": "You should buy it now."}
+    monkeypatch.setattr(a, "_call_model", FakeModel([bad, bad]))
+    assert a.ask("Buy?", attachment=_att("c.png", PNG_1PX))["withheld"]
+
+
+def test_refused_file_costs_nothing(monkeypatch):
+    def boom(*args):
+        raise AssertionError("model must not be called")
+    monkeypatch.setattr(a, "_call_model", boom)
+    out = a.ask("Read this", attachment=_att("x.exe", b"MZ"))
+    assert out["ok"] is False and "not supported" in out["error"] and a.spent_today() == (0.0, 0)
