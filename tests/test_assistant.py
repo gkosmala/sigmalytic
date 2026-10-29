@@ -511,7 +511,7 @@ def test_setup_state_always_carries_its_direction():
     assert a._setup_label({"weis_state": "Avoid", "weis_direction": "short"}) == "Avoid short"
     assert a._setup_label({}) == "No setup"
     out = a.tool_search_scan(symbols=["JPM"])
-    assert all(r["setup_state"] == "No setup" for r in out["rows"]) and "separate reading" in out["setup_state_note"]
+    assert all(r["setup_state"] == "No setup" for r in out["rows"]) and "separate from" in out["setup_state_note"]
 
 
 def test_large_positions_file_keeps_every_ticker():
@@ -724,3 +724,11 @@ def test_refused_research_sites_are_dropped_and_the_request_retried(monkeypatch)
     assert "ssrn.com" in calls[1] and "cnbc.com" not in a.research_domains()     # remembered for later questions
     for d in ("barrons.com", "ft.com", "investopedia.com", "reuters.com", "wsj.com"):
         assert d not in a.RESEARCH_DOMAINS
+
+
+def test_setup_states_are_defined_for_the_model():
+    note = a.SETUP_NOTE
+    for word in ("Watching", "Setting Up", "Armed", "Avoid", "'long'", "'short'", "undecided"):
+        assert word in note
+    assert "never treat a Watching state as support" in a.build_system_prompt()
+    assert not a.ch.method_words_in(note) and not a.EXTRA_BLOCKED.search(note)
