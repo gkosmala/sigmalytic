@@ -89,9 +89,12 @@ EXTRA_BLOCKED = re.compile(r"\b(?:wyckoff|weis)\b", re.IGNORECASE)
 RESEARCH_DOMAINS = (
     "ssrn.com", "nber.org", "cfainstitute.org", "onlinelibrary.wiley.com", "academic.oup.com", "sciencedirect.com",
     "jstor.org", "aqr.com", "federalreserve.gov", "sec.gov", "investor.gov", "finra.org", "irs.gov",
-    "stockcharts.com", "investopedia.com", "morningstar.com", "reuters.com", "wsj.com", "ft.com", "bloomberg.com",
-    "cnbc.com", "barrons.com",
+    "stockcharts.com", "morningstar.com", "bloomberg.com", "cnbc.com",
 )
+# Sites that block Anthropic's crawler make the whole request fail (400), so they are left out. Removed 2026-10-29
+# after Anthropic refused: barrons.com, ft.com, investopedia.com, reuters.com, wsj.com. Any other site refused later
+# is dropped automatically for the life of the process (see _call_model) and the request is retried.
+_BLOCKED_DOMAINS: set = set()
 
 
 def _flag(name: str, default: str = "1") -> bool:
@@ -114,7 +117,22 @@ def house_rules() -> str:
 
 def research_domains() -> List[str]:
     extra = [d.strip().lower() for d in (os.getenv("ASSISTANT_RESEARCH_DOMAINS") or "").split(",") if d.strip()]
-    return sorted(set(RESEARCH_DOMAINS) | set(extra))
+    return sorted((set(RESEARCH_DOMAINS) | set(extra)) - _BLOCKED_DOMAINS)
+
+
+_REFUSED_RE = re.compile(r"domains are not accessible[^\[]*\[([^\]]*)\]", re.IGNORECASE)
+
+
+def refused_domains(r: Any) -> List[str]:
+    """Domains Anthropic says its crawler cannot reach, from a 400 reply; empty for any other reply."""
+    if getattr(r, "status_code", 200) != 400:
+        return []
+    try:
+        msg = str((r.json().get("error") or {}).get("message") or "")
+    except Exception:
+        return []
+    m = _REFUSED_RE.search(msg)
+    return [d.strip().strip("'\"").lower() for d in m.group(1).split(",") if d.strip()] if m else []
 
 
 def provider_name() -> Optional[str]:
@@ -1210,9 +1228,20 @@ def _call_model(provider: str, messages: List[Dict[str, Any]], model: str,
         effort = (os.getenv("ASSISTANT_EFFORT") or "").strip().lower()
         if effort:
             payload["output_config"] = {"effort": effort}
-        r = _post("https://api.anthropic.com/v1/messages", payload,
-                  {"x-api-key": os.environ["ANTHROPIC_API_KEY"], "anthropic-version": "2023-06-01",
-                   "content-type": "application/json"}, "output_config")
+        headers = {"x-api-key": os.environ["ANTHROPIC_API_KEY"], "anthropic-version": "2023-06-01",
+                   "content-type": "application/json"}
+        r = _post("https://api.anthropic.com/v1/messages", payload, headers, "output_config")
+        for _ in range(2):    # a refused research site: drop it (remembered) and retry; a 400 is not billed
+            bad = refused_domains(r)
+            if not bad:
+                break
+            _BLOCKED_DOMAINS.update(bad)
+            keep = [t for t in payload["tools"] if t.get("type") != "web_search_20250305"]
+            if research_domains():
+                keep.append({"type": "web_search_20250305", "name": "web_search",
+                             "max_uses": RESEARCH_MAX_SEARCHES, "allowed_domains": research_domains()})
+            payload["tools"] = keep
+            r = _post("https://api.anthropic.com/v1/messages", payload, headers, "output_config")
         _raise_for(r, "Anthropic")
         return parse_anthropic(r.json())
     payload = {"model": model, "messages": [{"role": "system", "content": build_system_prompt("openai")}, *messages],
