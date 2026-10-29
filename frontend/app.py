@@ -5963,7 +5963,6 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                      style={"width": "100%", "minHeight": "70px", "boxSizing": "border-box", "marginTop": "10px",
                             "background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}", "borderRadius": "8px",
                             "padding": "10px 12px", "color": WHITE, "fontSize": "13px", "resize": "vertical"}),
-        dcc.Store(id="assistant-attachment", storage_type="memory", data=None),
         html.Div([
             dcc.Upload(id="assistant-upload", multiple=False, max_size=10 * 1024 * 1024,
                        accept=".png,.jpg,.jpeg,.gif,.webp,.pdf,.csv,.tsv,.txt,.md,.json,.xlsx,.docx",
@@ -11304,8 +11303,6 @@ ASSISTANT_UPLOAD_LIMITS = {"png": 5, "jpg": 5, "jpeg": 5, "gif": 5, "webp": 5, "
 
 
 @app.callback(Output("assistant-attachment", "data"),
-              Output("assistant-attachment-label", "children"),
-              Output("assistant-attachment-row", "style"),
               Output("assistant-upload", "contents"),
               Input("assistant-upload", "contents"),
               Input("assistant-attachment-remove", "n_clicks"),
@@ -11313,24 +11310,37 @@ ASSISTANT_UPLOAD_LIMITS = {"png": 5, "jpg": 5, "jpeg": 5, "gif": 5, "webp": 5, "
               State("assistant-upload", "filename"),
               prevent_initial_call=True)
 def handle_assistant_attachment(contents, remove_clicks, clear_clicks, filename):
-    """Keeps one attached file for the conversation until it is removed or a new conversation starts. The file is
-    sent with each question while attached, so follow-up questions can refer to it."""
-    hidden = {"display": "none", "marginTop": "8px"}
+    """Keeps one attached file for the conversation until it is removed, a new conversation starts, or the page is
+    reloaded. It is sent with each question while attached, so follow-up questions can refer to it. A refused file
+    is kept as {"error": ...} so the message shows and nothing is sent."""
     if callback_context.triggered_id != "assistant-upload" or not contents:
-        return None, "", hidden, None
+        return None, None
     name = os.path.basename(filename or "file")
     ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
     if ext not in ASSISTANT_UPLOAD_LIMITS:
-        return None, f"{name}: this file type is not supported.", {"display": "flex", "alignItems": "center",
-                                                                    "marginTop": "8px"}, None
+        return {"error": f"{name}: this file type is not supported."}, None
     approx_mb = len(contents.split(",", 1)[-1]) * 3 / 4 / (1024 * 1024)
     if approx_mb > ASSISTANT_UPLOAD_LIMITS[ext]:
-        return None, (f"{name} is {approx_mb:.1f} MB; the limit for this type is {ASSISTANT_UPLOAD_LIMITS[ext]} MB."), \
-            {"display": "flex", "alignItems": "center", "marginTop": "8px"}, None
-    size = f"{approx_mb:.1f} MB" if approx_mb >= 1 else f"{max(1, round(approx_mb * 1024))} KB"
-    label = f"Attached: {name} ({size}). Used for every question until you remove it."
-    return {"name": name, "data": contents}, label, {"display": "flex", "alignItems": "center",
-                                                      "marginTop": "8px"}, None
+        return {"error": f"{name} is {approx_mb:.1f} MB; the limit for this type is "
+                         f"{ASSISTANT_UPLOAD_LIMITS[ext]} MB."}, None
+    return {"name": name, "data": contents, "mb": approx_mb}, None
+
+
+@app.callback(Output("assistant-attachment-label", "children"),
+              Output("assistant-attachment-row", "style"),
+              Input("assistant-attachment", "data"),
+              Input("assistant-attachment-row", "id"))
+def show_assistant_attachment(att, _row_id):
+    """Shows what is attached. Runs again whenever the Admin tab is rebuilt, so the label always matches the file
+    that will be sent."""
+    shown = {"display": "flex", "alignItems": "center", "marginTop": "8px"}
+    if not att:
+        return "", {"display": "none", "marginTop": "8px"}
+    if att.get("error"):
+        return att["error"], shown
+    mb = att.get("mb") or 0
+    size = f"{mb:.1f} MB" if mb >= 1 else f"{max(1, round(mb * 1024))} KB"
+    return f"Attached: {att['name']} ({size}). Used for every question until you remove it.", shown
 
 
 @app.callback(Output("assistant-history", "data"),
@@ -11353,6 +11363,8 @@ def handle_assistant_ask(ask_clicks, clear_clicks, question, history, session, a
     history = list(history or [])
     convo = [{"role": m["role"], "content": m["content"]} for m in history
              if m.get("role") in ("user", "assistant")][-8:]
+    if attachment and not attachment.get("data"):
+        attachment = None                      # a refused file: its message is already showing; send nothing
     turn = {"role": "user", "content": q}
     if attachment:
         turn["attachment"] = attachment.get("name")
@@ -11360,7 +11372,7 @@ def handle_assistant_ask(ask_clicks, clear_clicks, question, history, session, a
     try:
         body = {"question": q, "history": convo}
         if attachment:
-            body["attachment"] = attachment
+            body["attachment"] = {"name": attachment["name"], "data": attachment["data"]}
         r = req.post(f"{BACKEND_HTTP}/api/admin/assistant/ask", json=body,
                      headers=_auth_headers(session), timeout=150)
         if r.status_code == 401:
@@ -12510,6 +12522,9 @@ app.layout = html.Div([
                     "zIndex":9999,"background":"#0a1628","overflowY":"auto"}),
     dcc.Store(id="s-live",      data=_init_live),
     dcc.Store(id="s-session",    data=None, storage_type="session"),
+    # AI Sigmalytic Assistant's attached file. App level so it survives switching tabs; memory only (files are too
+    # large for browser session storage), so a page reload clears it.
+    dcc.Store(id="assistant-attachment", data=None, storage_type="memory"),
     dcc.Store(id="s-recovery-token", data=None),
     dcc.Store(id="s-page",       data="login"), 
     dcc.Store(id="s-candles",   data=_init_candles),
