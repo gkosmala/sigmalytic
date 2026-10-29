@@ -691,3 +691,36 @@ def test_claude_request_includes_trusted_web_search(monkeypatch):
     monkeypatch.setenv("ASSISTANT_RESEARCH", "0")
     a._call_model("anthropic", [{"role": "user", "content": "q"}], "claude-sonnet-5-5")
     assert not [t for t in sent["tools"] if t.get("type") == "web_search_20250305"]
+
+
+def test_refused_research_sites_are_dropped_and_the_request_retried(monkeypatch):
+    calls = []
+
+    class Refused:
+        status_code = 400
+        headers = {}
+
+        def json(self):
+            return {"error": {"message": "The following domains are not accessible to our user agent: "
+                                         "['cnbc.com', 'morningstar.com']. Read more: https://support.example"}}
+
+    class Ok:
+        status_code = 200
+        headers = {}
+
+        def json(self):
+            return {"content": [{"type": "text", "text": "ok"}], "usage": {"input_tokens": 1, "output_tokens": 1}}
+
+    def post(url, payload, headers, opt):
+        ws = [t for t in payload["tools"] if t.get("type") == "web_search_20250305"]
+        calls.append(list(ws[0]["allowed_domains"]) if ws else None)
+        return Refused() if len(calls) == 1 else Ok()
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setattr(a, "_post", post)
+    monkeypatch.setattr(a, "_BLOCKED_DOMAINS", set())
+    assert a._call_model("anthropic", [{"role": "user", "content": "q"}], "claude-sonnet-5-5")["text"] == "ok"
+    assert "cnbc.com" in calls[0] and "cnbc.com" not in calls[1] and "morningstar.com" not in calls[1]
+    assert "ssrn.com" in calls[1] and "cnbc.com" not in a.research_domains()     # remembered for later questions
+    for d in ("barrons.com", "ft.com", "investopedia.com", "reuters.com", "wsj.com"):
+        assert d not in a.RESEARCH_DOMAINS
