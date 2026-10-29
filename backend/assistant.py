@@ -450,7 +450,10 @@ SYSTEM_PROMPT = (
     "all of them. It returns every match plus not_flagged and not_in_universe, so the answer is complete. Never page "
     "through the whole scan by sector to find holdings.\n"
     "9. Use as few lookups as you can. A list of the whole scan is too long for one answer: give the counts and the "
-    "most relevant rows, and offer to narrow it (by sector, sessions held, holdings or signal)."
+    "most relevant rows, and offer to narrow it (by sector, sessions held, holdings or signal).\n"
+    "10. For a holdings check, show the flagged holdings in one table (symbol, signal, close, level, % beyond, first "
+    "crossed). For not_flagged and not_in_universe give the counts, and list the tickers only when there are 30 or "
+    "fewer or when asked. Keep explanations short."
 )
 
 
@@ -722,6 +725,7 @@ def user_content(provider: str, question: str, f: Optional[Dict[str, Any]]) -> A
                      "source": {"type": "base64", "media_type": "application/pdf", "data": f["data"]}}
         else:
             block = {"type": "text", "text": _file_text_block(f)}
+        block["cache_control"] = CACHE      # a file is sent on every round; cached, rounds after the first cost 0.1x
     else:
         if f["kind"] == "image":
             block = {"type": "image_url", "image_url": {"url": f"data:{f['media_type']};base64,{f['data']}"}}
@@ -770,22 +774,49 @@ def _raise_for(r: Any, who: str) -> None:
         raise RuntimeError(f"{who} returned {status}" + (f": {detail}" if detail else "."))
 
 
+MAX_ANSWER_TOKENS = 16000     # room for thinking plus a long table; billed only for what is written
+CACHE = {"type": "ephemeral"}
+
+
+def cached_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Claude prompt caching: marks the end of the conversation so far, so the next round of the same question
+    rereads it from cache at a tenth of the input price instead of paying for it again. The uploaded file carries
+    its own mark (see user_content). Never changes the stored conversation."""
+    if not messages:
+        return messages
+    out = list(messages)
+    last = dict(out[-1])
+    content = last.get("content")
+    if isinstance(content, str):
+        content = [{"type": "text", "text": content}]
+    if isinstance(content, list) and content and isinstance(content[-1], dict) and content[-1].get("type") in (
+            "text", "tool_result", "image", "document"):
+        content = [*content[:-1], {**content[-1], "cache_control": CACHE}]
+        last["content"] = content
+        out[-1] = last
+    return out
+
+
 def anthropic_tools() -> List[Dict[str, Any]]:
     return [{"name": t["function"]["name"], "description": t["function"]["description"],
              "input_schema": t["function"]["parameters"]} for t in TOOLS]
 
 
 def parse_anthropic(body: Dict[str, Any]) -> Dict[str, Any]:
-    """Claude Messages API reply -> one provider-neutral turn."""
+    """Claude Messages API reply -> one provider-neutral turn. in_billed counts cached input at its real price:
+    a cache write costs 1.25 times the input price and a cache read 0.1 times."""
     content = body.get("content") or []
     u = body.get("usage") or {}
-    tokens_in = sum(int(u.get(k, 0) or 0) for k in ("input_tokens", "cache_read_input_tokens",
-                                                    "cache_creation_input_tokens"))
+    plain = int(u.get("input_tokens", 0) or 0)
+    write = int(u.get("cache_creation_input_tokens", 0) or 0)
+    read = int(u.get("cache_read_input_tokens", 0) or 0)
     calls = [{"id": b.get("id"), "name": b.get("name", ""), "input": b.get("input"), "input_error": None}
              for b in content if b.get("type") == "tool_use"]
     return {"text": "".join(b.get("text", "") for b in content if b.get("type") == "text").strip(),
-            "calls": calls, "in": tokens_in, "out": int(u.get("output_tokens", 0) or 0),
+            "calls": calls, "in": plain + write + read, "in_billed": plain + 1.25 * write + 0.1 * read,
+            "cache_read": read, "out": int(u.get("output_tokens", 0) or 0),
             "reasoning": int((u.get("output_tokens_details") or {}).get("thinking_tokens", 0) or 0),
+            "cut_off": body.get("stop_reason") == "max_tokens",
             "assistant_message": {"role": "assistant", "content": content}}
 
 
@@ -801,8 +832,12 @@ def parse_openai(body: Dict[str, Any]) -> Dict[str, Any]:
         except ValueError as exc:
             args, err = None, f"arguments were not valid JSON: {exc}"
         calls.append({"id": c.get("id"), "name": fn.get("name", ""), "input": args, "input_error": err})
+    finish = ((body.get("choices") or [{}])[0].get("finish_reason") or "")
     return {"text": (msg.get("content") or "").strip(), "calls": calls,
-            "in": int(u.get("prompt_tokens", 0) or 0), "out": int(u.get("completion_tokens", 0) or 0),
+            "in": int(u.get("prompt_tokens", 0) or 0), "in_billed": int(u.get("prompt_tokens", 0) or 0),
+            "cache_read": int((u.get("prompt_tokens_details") or {}).get("cached_tokens", 0) or 0),
+            "cut_off": finish == "length",
+            "out": int(u.get("completion_tokens", 0) or 0),
             "reasoning": int((u.get("completion_tokens_details") or {}).get("reasoning_tokens", 0) or 0),
             "assistant_message": {"role": "assistant", "content": msg.get("content") or "",
                                   **({"tool_calls": msg["tool_calls"]} if msg.get("tool_calls") else {})}}
@@ -813,8 +848,9 @@ def _call_model(provider: str, messages: List[Dict[str, Any]], model: str,
     """One model turn. `messages` holds the conversation in the provider's own format (no system message).
     force_answer turns lookups off for this turn, so the model must write its answer from what it already has."""
     if provider == "anthropic":
-        payload: Dict[str, Any] = {"model": model, "max_tokens": 4000, "system": SYSTEM_PROMPT,
-                                   "messages": messages, "tools": anthropic_tools()}
+        payload: Dict[str, Any] = {"model": model, "max_tokens": MAX_ANSWER_TOKENS,
+                                   "system": [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": CACHE}],
+                                   "messages": cached_messages(messages), "tools": anthropic_tools()}
         if force_answer:
             payload["tool_choice"] = {"type": "none"}
         effort = (os.getenv("ASSISTANT_EFFORT") or "").strip().lower()
@@ -826,7 +862,8 @@ def _call_model(provider: str, messages: List[Dict[str, Any]], model: str,
         _raise_for(r, "Anthropic")
         return parse_anthropic(r.json())
     payload = {"model": model, "messages": [{"role": "system", "content": SYSTEM_PROMPT}, *messages],
-               "tools": TOOLS, "tool_choice": "none" if force_answer else "auto", "max_completion_tokens": 6000}
+               "tools": TOOLS, "tool_choice": "none" if force_answer else "auto",
+               "max_completion_tokens": MAX_ANSWER_TOKENS}
     effort = (os.getenv("ASSISTANT_EFFORT") or os.getenv("ASSISTANT_REASONING_EFFORT") or "").strip().lower()
     if effort:
         payload["reasoning_effort"] = effort
@@ -905,21 +942,22 @@ def _question_cap() -> float:
         return 0.30
 
 
-def _force_note(messages: List[Dict[str, Any]]) -> None:
-    """Tells the model to answer now, added to the last user turn (tool results or the question) so the roles
-    still alternate, as Claude requires; ChatGPT accepts the same shape."""
-    text = ("No more lookups are available for this question. Write the best complete answer now from the lookup "
-            "results you already have, and say plainly if anything could not be checked.")
+def _note(messages: List[Dict[str, Any]], text: str) -> None:
+    """Adds an instruction to the last user turn (tool results or the question) so the roles still alternate, as
+    Claude requires; after ChatGPT tool messages it becomes a new user turn."""
     last = messages[-1] if messages else None
     if last and last.get("role") == "user":
         if isinstance(last.get("content"), list):
             last["content"] = [*last["content"], {"type": "text", "text": text}]
         else:
             last["content"] = f"{last.get('content') or ''}\n\n{text}"
-    elif last and last.get("role") == "tool":
-        messages.append({"role": "user", "content": text})          # ChatGPT: tool results, then a user turn
     else:
         messages.append({"role": "user", "content": text})
+
+
+def _force_note(messages: List[Dict[str, Any]]) -> None:
+    _note(messages, "No more lookups are available for this question. Write the best complete answer now from the "
+                    "lookup results you already have, and say plainly if anything could not be checked.")
 
 
 def ask(question: str, history: Any = None, admin: str = "", attachment: Any = None) -> Dict[str, Any]:
@@ -959,6 +997,10 @@ def ask(question: str, history: Any = None, admin: str = "", attachment: Any = N
     answer, problems, rewrote = "", [], False
     error = None
     forced_note = False
+    billed_in = 0.0
+    cached_in = 0
+    cut_off = False
+    shortened = False
 
     try:
         rounds = 0
@@ -967,7 +1009,7 @@ def ask(question: str, history: Any = None, admin: str = "", attachment: Any = N
                 error = "The question took too long to answer. Try a narrower question."
                 break
             rounds += 1
-            spent = _cost(model, tokens_in, tokens_out) or 0.0
+            spent = _cost(model, billed_in, tokens_out) or 0.0
             force = (rounds > MAX_ROUNDS or time.time() - started > DEADLINE_SECONDS - 35
                      or spent >= _question_cap())
             if force and not forced_note:
@@ -975,6 +1017,8 @@ def ask(question: str, history: Any = None, admin: str = "", attachment: Any = N
                 _force_note(messages)
             turn = _call_model(provider, messages, model, force_answer=force)
             tokens_in += turn["in"]
+            billed_in += turn.get("in_billed", turn["in"])
+            cached_in += turn.get("cache_read", 0)
             tokens_out += turn["out"]
             reasoning += turn["reasoning"]
             if turn["calls"] and not force:
@@ -991,6 +1035,14 @@ def ask(question: str, history: Any = None, admin: str = "", attachment: Any = N
                 messages.extend(tool_results_messages(provider, results))
                 continue
             answer = turn["text"]
+            cut_off = bool(turn.get("cut_off"))
+            if not answer and cut_off and not shortened:
+                # The answer ran out of room before any text was written: ask once for a shorter version.
+                shortened = True
+                _note(messages, "Your answer was too long and was cut off before any text. Write a shorter "
+                                "answer now: the key counts, then a table of the flagged rows only, and counts "
+                                "(not full lists) for everything else.")
+                continue
             if not answer:
                 error = ("No answer was written. Try a narrower question (for example one sector, or your "
                          "holdings only).")
@@ -1008,10 +1060,11 @@ def ask(question: str, history: Any = None, admin: str = "", attachment: Any = N
     except Exception as exc:
         error = str(exc)[:300]
 
-    cost = _cost(model, tokens_in, tokens_out)
+    cost = _cost(model, billed_in, tokens_out)
     _record_spend(cost)
-    usage = {"provider": provider, "model": model, "input_tokens": tokens_in, "output_tokens": tokens_out,
-             "reasoning_tokens": reasoning, "cost_usd": cost, "seconds": round(time.time() - started, 1)}
+    usage = {"provider": provider, "model": model, "input_tokens": tokens_in, "cached_input_tokens": cached_in,
+             "output_tokens": tokens_out, "reasoning_tokens": reasoning, "cost_usd": cost,
+             "seconds": round(time.time() - started, 1)}
 
     if error:
         result = {"ok": False, "error": error, "lookups": lookups, "usage": usage}
@@ -1022,8 +1075,12 @@ def ask(question: str, history: Any = None, admin: str = "", attachment: Any = N
     else:
         result = {"ok": True, "answer": answer, "disclaimer": DISCLAIMER, "lookups": lookups, "usage": usage,
                   "rewritten": rewrote}
+        if cut_off:
+            result["notice"] = ("This answer hit the length limit and may be cut off at the end. Ask for a "
+                                "narrower list (one signal, one sector, or flagged holdings only).")
         if f and not f["numbers_checked"]:
-            result["notice"] = (f"Numbers read from {f['name']} could not be checked by code; verify them against "
+            result["notice"] = ((result.get("notice", "") + " ").lstrip() +
+                                f"Numbers read from {f['name']} could not be checked by code; verify them against "
                                 f"the file. Numbers from Sigmalytic's data were still looked up, not guessed.")
     if file_info:
         result["attachment"] = file_info
