@@ -433,3 +433,71 @@ def test_tool_choice_none_when_forced(monkeypatch):
     monkeypatch.setattr(a, "_post", lambda url, payload, headers, opt: sent.update(payload) or R())
     a._call_model("anthropic", [{"role": "user", "content": "q"}], "claude-sonnet-5-5", force_answer=True)
     assert sent["tool_choice"] == {"type": "none"} and sent["tools"]
+
+
+# ── long answers and prompt caching ──
+
+def test_parse_anthropic_prices_cached_input_and_flags_cut_off():
+    body = {"content": [{"type": "thinking", "thinking": "..."}], "stop_reason": "max_tokens",
+            "usage": {"input_tokens": 1000, "cache_creation_input_tokens": 400, "cache_read_input_tokens": 10000,
+                      "output_tokens": 16000}}
+    t = a.parse_anthropic(body)
+    assert t["text"] == "" and t["cut_off"] and t["in"] == 11400
+    assert t["in_billed"] == pytest.approx(1000 + 1.25 * 400 + 0.1 * 10000)
+
+
+def test_cached_messages_marks_the_last_block_without_changing_the_conversation():
+    msgs = [{"role": "user", "content": "q"}, {"role": "assistant", "content": [{"type": "tool_use"}]},
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "c1", "content": "{}"}]}]
+    out = a.cached_messages(msgs)
+    assert out[-1]["content"][-1]["cache_control"] == {"type": "ephemeral"}
+    assert "cache_control" not in msgs[-1]["content"][-1]
+    assert a.cached_messages([{"role": "user", "content": "q"}])[0]["content"][0]["cache_control"]
+
+
+def test_claude_request_caches_system_and_file_and_allows_long_answers(monkeypatch):
+    sent = {}
+
+    class R:
+        status_code = 200
+        headers = {}
+
+        def json(self):
+            return {"content": [{"type": "text", "text": "ok"}], "usage": {"input_tokens": 1, "output_tokens": 1}}
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setattr(a, "_post", lambda url, payload, headers, opt: sent.update(payload) or R())
+    f = a.prepare_attachment(_att("pos.csv", b"Symbol,Qty\nNVDA,10\n"))
+    a._call_model("anthropic", [{"role": "user", "content": a.user_content("anthropic", "q", f)}],
+                  "claude-sonnet-5-5")
+    assert sent["max_tokens"] == a.MAX_ANSWER_TOKENS >= 16000
+    assert sent["system"][0]["cache_control"] == {"type": "ephemeral"}
+    blocks = sent["messages"][0]["content"]
+    assert blocks[0]["cache_control"] and blocks[-1]["cache_control"]
+    marks = 1 + sum(1 for b in blocks if "cache_control" in b)
+    assert marks <= 4                                           # Claude allows at most four cache marks
+
+
+def test_cut_off_empty_answer_gets_one_shorter_retry(monkeypatch):
+    fake = FakeModel([_call("search_scan", {}), {"text": ""}, {"text": "NVDA closed at $171.25."}])
+    orig = fake.__call__
+
+    def call(provider, messages, model, force_answer=False):
+        t = orig(provider, messages, model, force_answer)
+        t["cut_off"] = t["text"] == ""
+        return t
+    monkeypatch.setattr(a, "_call_model", call)
+    out = a.ask("Holdings?")
+    assert out["ok"] and "too long and was cut off" in json.dumps(fake.sent[-1][-1])
+
+
+def test_cut_off_answer_with_text_is_shown_with_a_notice(monkeypatch):
+    fake = FakeModel([_call("search_scan", {}), {"text": "NVDA closed at $171.25 and"}])
+    orig = fake.__call__
+
+    def call(provider, messages, model, force_answer=False):
+        t = orig(provider, messages, model, force_answer)
+        t["cut_off"] = not t["calls"]
+        return t
+    monkeypatch.setattr(a, "_call_model", call)
+    out = a.ask("Holdings?")
+    assert out["ok"] and "length limit" in out["notice"]
