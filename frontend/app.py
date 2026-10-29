@@ -5946,8 +5946,10 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
 
     # ── AI Sigmalytic Assistant -- plain-English questions answered by Claude from Sigmalytic's own data only. ──
     assistant_block = _admin_card([
-        html.Div("AI SIGMALYTIC ASSISTANT", style={"fontSize": "12px", "fontWeight": "800", "color": WHITE,
-                                               "marginBottom": "6px"}),
+        html.Div("AI SIGMALYTIC ASSISTANT", style={
+            "fontSize": "13px", "fontWeight": "800", "letterSpacing": "0.06em", "color": "#34D399",
+            "marginBottom": "6px",
+            "textShadow": "0 0 6px rgba(52,211,153,.85), 0 0 14px rgba(52,211,153,.55), 0 0 28px rgba(52,211,153,.35)"}),
         html.Div("Ask a question in plain English. The AI assistant looks up Sigmalytic's latest scan, symbol levels, "
                  "setup states and stored daily reports, then answers. Every number is checked against the data before "
                  "it is shown, and every question is logged. Read-only: nothing is traded, changed or posted.",
@@ -5970,7 +5972,8 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                                "borderRadius": "8px", "padding": "10px 16px", "fontSize": "13px",
                                "cursor": "pointer"}),
         ], style={"marginTop": "10px"}),
-    ], sx={"marginBottom": "16px"})
+    ], sx={"marginBottom": "16px", "border": "1px solid rgba(52,211,153,.55)",
+           "boxShadow": "0 0 18px rgba(52,211,153,.25), 0 8px 32px rgba(0,0,0,.32)"})
 
     # ── Daily Report -> Content Hub: tap a symbol from a stored daily report to get the full Content Hub package
     # (blog draft, share image, platform teasers). Same backend as Content Hub; drafts only, nothing posts.
