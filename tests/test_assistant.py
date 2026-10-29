@@ -32,7 +32,8 @@ def isolate(monkeypatch):
     monkeypatch.setattr(a, "_COMPANIES", {
         "NVDA": {"company": "Nvidia Corp", "sector": "Information Technology", "industry": "Semiconductors"},
         "AMD": {"company": "Advanced Micro Devices", "sector": "Information Technology", "industry": "Semiconductors"},
-        "JPM": {"company": "Jpmorgan Chase", "sector": "Financials", "industry": "Banks"}})
+        "JPM": {"company": "Jpmorgan Chase", "sector": "Financials", "industry": "Banks"},
+        "MSFT": {"company": "Microsoft", "sector": "Information Technology", "industry": "Software"}})
     a._LOCAL_SPEND.clear()
     a._FACTS_CACHE.clear()
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
@@ -104,8 +105,9 @@ class FakeModel:
         self.replies = list(replies)
         self.sent = []
 
-    def __call__(self, provider, messages, model):
+    def __call__(self, provider, messages, model, force_answer=False):
         self.sent.append([dict(m) for m in messages])
+        self.forced = getattr(self, "forced", []) + [force_answer]
         reply = self.replies.pop(0)
         calls = reply.get("calls", [])
         return {"text": reply.get("text", ""), "calls": calls, "in": 1000, "out": 200, "reasoning": 0,
@@ -357,3 +359,77 @@ def test_refused_file_costs_nothing(monkeypatch):
     monkeypatch.setattr(a, "_call_model", boom)
     out = a.ask("Read this", attachment=_att("x.exe", b"MZ"))
     assert out["ok"] is False and "not supported" in out["error"] and a.spent_today() == (0.0, 0)
+
+
+# ── holdings checks, tickers from files, forced answers ──
+
+def test_holdings_check_returns_everything_in_one_call(monkeypatch):
+    monkeypatch.setattr(a, "MAX_SYMBOL_ROWS", 400)
+    out = a.tool_search_scan(symbols=["NVDA", "AMD", "JPM", "MSFT", "SPY"], limit=1)
+    assert out["total_matched"] == 4 and out["returned"] == 4          # limit ignored for a holdings check
+    assert out["not_flagged"] == ["MSFT"] and out["not_in_universe"] == ["SPY"]
+    every = set(["NVDA", "AMD", "JPM", "MSFT", "SPY"])
+    assert {r["symbol"] for r in out["rows"]} | set(out["not_flagged"]) | set(out["not_in_universe"]) == every
+    assert set(out["rows"][0]) <= {"symbol", "signal", "close", "level", "first_crossed", "sessions_held",
+                                   "pct_beyond_level", "setup_state"}
+
+
+def test_file_tickers_from_symbol_column_and_fallback():
+    csv = "Account,Symbol,Qty\nIRA,NVDA,10\nIRA,spy,5\nIRA,BRK/B,1\nIRA,NVDA,3\n"
+    assert a.file_tickers(csv) == (["NVDA", "SPY", "BRK.B"], "symbol column")
+    sheet = "Sheet: Main\nTicker,Shares\nAMD,4\nSheet: Other\nNotes\nhello"
+    assert a.file_tickers(sheet)[0] == ["AMD"]
+    prose = "I hold NVDA and JPM, plus some CASH and an ETF."
+    assert a.file_tickers(prose) == (["NVDA", "JPM"], "matched to Sigmalytic's universe")
+
+
+def test_uploaded_positions_file_lists_tickers_for_the_model():
+    f = a.prepare_attachment(_att("pos.csv", b"Symbol,Qty\nNVDA,10\nMSFT,2\nSPY,1\n"))
+    block = a.user_content("anthropic", "Which of my holdings are flagged?", f)[0]["text"]
+    assert "Tickers read from this file by code (3" in block and "NVDA, MSFT, SPY" in block
+
+
+def test_last_round_is_forced_to_answer(monkeypatch):
+    replies = [_call("search_scan", {}, cid=f"c{i}") for i in range(a.MAX_ROUNDS)] + [{"text": "Done: 3 matched."}]
+    fake = FakeModel(replies)
+    monkeypatch.setattr(a, "_call_model", fake)
+    out = a.ask("List everything")
+    assert out["ok"] and fake.forced[-1] is True and not any(fake.forced[:-1])
+    assert "No more lookups are available" in json.dumps(fake.sent[-1][-1])
+
+
+def test_question_cost_cap_forces_an_answer(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setenv("ASSISTANT_MAX_QUESTION_USD", "0.001")      # one fake turn costs $0.004 on Sonnet
+    fake = FakeModel([_call("search_scan", {}), {"text": "NVDA closed at $171.25."}])
+    monkeypatch.setattr(a, "_call_model", fake)
+    out = a.ask("NVDA?")
+    assert out["ok"] and fake.forced == [False, True]
+
+
+def test_force_note_keeps_roles_alternating():
+    msgs = [{"role": "user", "content": "q"}, {"role": "assistant", "content": [{"type": "tool_use"}]},
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "c1", "content": "{}"}]}]
+    a._force_note(msgs)
+    assert len(msgs) == 3 and msgs[-1]["content"][-1]["type"] == "text"
+    plain = [{"role": "user", "content": "q"}]
+    a._force_note(plain)
+    assert len(plain) == 1 and "No more lookups" in plain[0]["content"]
+    tool = [{"role": "user", "content": "q"}, {"role": "tool", "tool_call_id": "c1", "content": "{}"}]
+    a._force_note(tool)
+    assert tool[-1]["role"] == "user"
+
+
+def test_tool_choice_none_when_forced(monkeypatch):
+    sent = {}
+
+    class R:
+        status_code = 200
+        headers = {}
+
+        def json(self):
+            return {"content": [{"type": "text", "text": "ok"}], "usage": {"input_tokens": 1, "output_tokens": 1}}
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setattr(a, "_post", lambda url, payload, headers, opt: sent.update(payload) or R())
+    a._call_model("anthropic", [{"role": "user", "content": "q"}], "claude-sonnet-5-5", force_answer=True)
+    assert sent["tool_choice"] == {"type": "none"} and sent["tools"]
