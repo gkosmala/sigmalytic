@@ -5951,9 +5951,11 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             "marginBottom": "6px",
             "textShadow": "0 0 6px rgba(52,211,153,.85), 0 0 14px rgba(52,211,153,.55), 0 0 28px rgba(52,211,153,.35)"}),
         html.Div("Ask a question in plain English. The AI assistant looks up Sigmalytic's latest scan, symbol levels, "
-                 "setup states and stored daily reports, then answers. You can also attach an image, PDF, spreadsheet "
-                 "or document to ask about. Every number is checked against the data before it is shown, and every "
-                 "question is logged. Read-only: nothing is traded, changed or posted.",
+                 "setup states, RSI and stored daily reports, then answers. Attach an image, PDF, spreadsheet or "
+                 "positions file to ask about it. It can suggest buying, selling or holding for your own decisions, "
+                 "following your standing rules, and add a Research context section with linked sources. Numbers "
+                 "about your data are checked before they are shown, and every question is logged. Admin only. "
+                 "Nothing is traded, changed or posted.",
                  style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"}),
         dcc.Store(id="assistant-history", storage_type="session", data=[]),
         dcc.Loading(html.Div(id="assistant-thread", style={"fontSize": "13px", "color": WHITE}),

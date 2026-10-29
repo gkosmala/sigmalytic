@@ -33,6 +33,12 @@ Settings (Render environment variables on the backend service)
   ASSISTANT_EFFORT             optional thinking effort, e.g. "low" (Claude output_config.effort / OpenAI reasoning_effort)
   ASSISTANT_DAILY_LIMIT_USD    default 5     spending cap per calendar day, Eastern time
   ASSISTANT_DAILY_QUESTIONS    default 100   question cap per day (also the cap when a model's price is unknown)
+  ASSISTANT_SUGGESTIONS        default on    buy / sell / hold suggestions for the administrator's own decisions
+                               (admin only; "0" turns them off and restores describe-only answers)
+  ASSISTANT_HOUSE_RULES        default "Never sell winners (positions above their cost)."  standing rules every
+                               suggestion follows
+  ASSISTANT_RESEARCH           default on    Claude may add a "Research context" section using web search on
+                               trusted sources (RESEARCH_DOMAINS + ASSISTANT_RESEARCH_DOMAINS); $0.01 per search
   ASSISTANT_MAX_QUESTION_USD   default 0.30  once one question has cost this much, the model must answer with what
                                it has (lookups are switched off); the same happens on the last round
 """
@@ -75,7 +81,40 @@ SETUP_NOTE = ("setup_state is a separate reading from the platform's setup engin
 SECTOR_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "russell1000_sector_industry.csv")
 
 DISCLAIMER = ch.SHORT_DISCLAIMER
+DISCLAIMER_SUGGEST = ("Suggestions are for the administrator's own decisions, drawn from Sigmalytic's data and the "
+                      "standing rules; they are not advice to anyone else and do not guarantee results.")
 EXTRA_BLOCKED = re.compile(r"\b(?:wyckoff|weis)\b", re.IGNORECASE)
+
+
+RESEARCH_DOMAINS = (
+    "ssrn.com", "nber.org", "cfainstitute.org", "onlinelibrary.wiley.com", "academic.oup.com", "sciencedirect.com",
+    "jstor.org", "aqr.com", "federalreserve.gov", "sec.gov", "investor.gov", "finra.org", "irs.gov",
+    "stockcharts.com", "investopedia.com", "morningstar.com", "reuters.com", "wsj.com", "ft.com", "bloomberg.com",
+    "cnbc.com", "barrons.com",
+)
+
+
+def _flag(name: str, default: str = "1") -> bool:
+    return (os.getenv(name, default) or default).strip().lower() not in ("0", "false", "no", "off")
+
+
+def suggestions_on() -> bool:
+    """Buy / sell / hold suggestions for the administrator's own decisions. Admin only: the assistant endpoints
+    require an admin login. Do not expose this mode to subscribers without legal review."""
+    return _flag("ASSISTANT_SUGGESTIONS")
+
+
+def research_on() -> bool:
+    return _flag("ASSISTANT_RESEARCH")
+
+
+def house_rules() -> str:
+    return (os.getenv("ASSISTANT_HOUSE_RULES") or "Never sell winners (positions above their cost).").strip()
+
+
+def research_domains() -> List[str]:
+    extra = [d.strip().lower() for d in (os.getenv("ASSISTANT_RESEARCH_DOMAINS") or "").split(",") if d.strip()]
+    return sorted(set(RESEARCH_DOMAINS) | set(extra))
 
 
 def provider_name() -> Optional[str]:
@@ -654,7 +693,7 @@ TOOLS = [
                        "required": ["date"], "additionalProperties": False}}},
 ]
 
-SYSTEM_PROMPT = (
+_BASE_PROMPT = (
     "You are the Sigmalytic Assistant for Sigmalytic Quant Corporation's administrator. You answer questions about "
     "the market using ONLY Sigmalytic's data, which you get by calling the lookups. Never answer from memory, and "
     "never use outside knowledge about prices, news or companies beyond what a lookup returns.\n"
@@ -663,8 +702,7 @@ SYSTEM_PROMPT = (
     "answer the question, say exactly what is missing (for example, only the latest scan is stored).\n"
     "2. Copy every number exactly as a lookup returned it. Do not round, add, subtract, average or compute new "
     "numbers; counts must come from total_matched or counts_by_signal. Dates may be written out in words.\n"
-    "3. Describe; never advise. No buy, sell, hold or short suggestions, no predictions, no price targets, no "
-    "promises.\n"
+    "3. {rule3}\n"
     "4. Call the platform's analysis \"Sigmalytic's scan\" or \"Sigmalytic's framework\". Never write the words "
     "Wyckoff or Weis. Never describe formulas, thresholds, scores, calibration or how levels are calculated.\n"
     "5. Be brief and clear for a busy reader: a one-line answer first, then a short list or small table when it helps. "
@@ -687,23 +725,89 @@ SYSTEM_PROMPT = (
     "12. The tickers line for an uploaded file lists every ticker code read from it; check them all in one "
     "search_scan call, never split them.\n"
     "13. For a positions file and questions about losers, gains, cost or RSI, call review_holdings (one call); its "
-    "gain/loss, totals and RSI are computed by code, so use them as given and never compute your own. Describe "
-    "the positions; never suggest selling, buying or holding any of them."
+    "gain/loss, totals and RSI are computed by code, so use them as given and never compute your own. {rule13}"
+    "{extra}"
 )
+
+
+RULE3_DESCRIBE = ("Describe; never advise. No buy, sell, hold or short suggestions, no predictions, no price "
+                  "targets, no promises.")
+RULE3_SUGGEST = ("You may suggest buying, selling, trimming, adding to or holding, for the administrator's own "
+                 "decisions. Put suggestions in a section headed '### Suggestions'. Each one names the position and "
+                 "the action, gives the Sigmalytic data behind it (numbers from lookups only), and states the main "
+                 "risk or what would change the view. Follow the administrator's standing rules: {rules} Never "
+                 "promise or predict an outcome: no guarantees and no 'will rise' or 'will fall'. If the data is "
+                 "not enough to suggest anything, say so.")
+RESEARCH_RULE = ("\n14. For questions about strategy, exit rules or indicators, you may add a short section headed "
+                 "'### Research context' saying what published research and standard practice show. Use web_search "
+                 "for it (trusted sources only) and link every source you rely on as a markdown link; never link "
+                 "anything you did not find in a search. Numbers in that section must come from the sources; "
+                 "numbers anywhere else must come from lookups. Keep research separate from Sigmalytic's data, and "
+                 "where a rule could be tested on Sigmalytic's data, say so.")
+
+
+def build_system_prompt(provider: str = "anthropic") -> str:
+    suggest = suggestions_on()
+    rule3 = RULE3_SUGGEST.format(rules=house_rules()) if suggest else RULE3_DESCRIBE
+    rule13 = ("Then follow rule 3." if suggest else
+              "Describe the positions; never suggest selling, buying or holding any of them.")
+    extra = RESEARCH_RULE if (research_on() and provider == "anthropic") else ""
+    return _BASE_PROMPT.format(rule3=rule3, rule13=rule13, extra=extra)
+
+
+SYSTEM_PROMPT = build_system_prompt()   # kept for anything that imports it; requests call build_system_prompt()
 
 
 # ───────────────────────────── checks ─────────────────────────────
 
-def check_answer(answer: str, evidence: Any, check_numbers: bool = True) -> List[str]:
+# In suggestion mode buy/sell/hold wording is allowed; promises and predictions never are.
+_PROMISE_RE = re.compile(
+    r"guarantee[ds]?|risk[- ]free|can'?t lose|sure thing|no[- ]brainer|\bto the moon\b|\bfree money\b|"
+    r"(?:will|going to) (?:rise|fall|go up|go down|soar|crash|moon|rally|drop|surge|explode|double|recover)",
+    re.IGNORECASE)
+_RESEARCH_HEAD = re.compile(r"^\s{0,3}#{1,6}\s*research context\b.*$", re.IGNORECASE | re.MULTILINE)
+_ANY_HEAD = re.compile(r"^\s{0,3}#{1,6}\s", re.MULTILINE)
+_LINK_RE = re.compile(r"\]\((https?://[^)\s]+)\)|(?<![(\w])(https?://[^\s)\]]+)")
+
+
+def split_research(answer: str) -> Tuple[str, str]:
+    """(everything else, the '### Research context' section). The research section ends at the next heading."""
+    m = _RESEARCH_HEAD.search(answer or "")
+    if not m:
+        return answer or "", ""
+    nxt = _ANY_HEAD.search(answer, m.end())
+    stop = nxt.start() if nxt else len(answer)
+    return answer[:m.start()] + answer[stop:], answer[m.start():stop]
+
+
+def _same_page(url: str, seen: Dict[str, str]) -> bool:
+    norm = lambda u: u.split("#", 1)[0].rstrip("/").lower()
+    return any(norm(url) == norm(k) for k in seen)
+
+
+def check_answer(answer: str, evidence: Any, check_numbers: bool = True, suggestions: bool = False,
+                 sources: Optional[Dict[str, str]] = None) -> List[str]:
     """Problems that stop an answer from being shown. Empty list = the answer passes. check_numbers is turned off
-    only when an attached image (or a scanned PDF) holds numbers code cannot read; the answer is then labelled."""
+    only when an attached image (or a scanned PDF) holds numbers code cannot read; the answer is then labelled.
+    A '### Research context' section is exempt from the number check (its numbers come from the linked sources),
+    but every link in it must be a page a web search actually returned."""
     problems: List[str] = []
-    bad_nums = ch.numbers_trace_to_facts(answer, evidence) if check_numbers else []
+    main, research = split_research(answer)
+    bad_nums = ch.numbers_trace_to_facts(main, evidence) if check_numbers else []
     if bad_nums:
         problems.append("numbers not found in the lookup results: " + ", ".join(sorted(set(bad_nums))[:12]))
-    banned = ch.find_banned_phrases(answer)
+    if research:
+        links = [a or b for a, b in _LINK_RE.findall(research)]
+        if not links:
+            problems.append("a Research context section with no linked source")
+        unknown = [u for u in links if not _same_page(u, sources or {})]
+        if unknown:
+            problems.append("research links that no search returned: " + ", ".join(unknown[:5]))
+    banned = (sorted({m.group(0) for m in _PROMISE_RE.finditer(answer)}) if suggestions
+              else ch.find_banned_phrases(answer))
     if banned:
-        problems.append("advice or promise wording: " + ", ".join(banned))
+        problems.append(("promise or prediction wording: " if suggestions else "advice or promise wording: ")
+                        + ", ".join(banned))
     method = ch.method_words_in(answer)
     if method:
         problems.append("method words: " + ", ".join(method))
@@ -1009,6 +1113,8 @@ def _raise_for(r: Any, who: str) -> None:
         raise RuntimeError(f"{who} returned {status}" + (f": {detail}" if detail else "."))
 
 
+RESEARCH_MAX_SEARCHES = 3
+WEB_SEARCH_USD = 0.01          # Anthropic web search: $10 per 1,000 searches
 MAX_ANSWER_TOKENS = 16000     # room for thinking plus a long table; billed only for what is written
 CACHE = {"type": "ephemeral"}
 
@@ -1047,11 +1153,19 @@ def parse_anthropic(body: Dict[str, Any]) -> Dict[str, Any]:
     read = int(u.get("cache_read_input_tokens", 0) or 0)
     calls = [{"id": b.get("id"), "name": b.get("name", ""), "input": b.get("input"), "input_error": None}
              for b in content if b.get("type") == "tool_use"]
+    sources: Dict[str, str] = {}
+    for b in content:
+        if b.get("type") == "web_search_tool_result" and isinstance(b.get("content"), list):
+            for x in b["content"]:
+                if isinstance(x, dict) and x.get("url"):
+                    sources[x["url"]] = str(x.get("title") or x["url"])
     return {"text": "".join(b.get("text", "") for b in content if b.get("type") == "text").strip(),
             "calls": calls, "in": plain + write + read, "in_billed": plain + 1.25 * write + 0.1 * read,
             "cache_read": read, "out": int(u.get("output_tokens", 0) or 0),
             "reasoning": int((u.get("output_tokens_details") or {}).get("thinking_tokens", 0) or 0),
             "cut_off": body.get("stop_reason") == "max_tokens",
+            "paused": body.get("stop_reason") == "pause_turn", "sources": sources,
+            "searches": int((u.get("server_tool_use") or {}).get("web_search_requests", 0) or 0),
             "assistant_message": {"role": "assistant", "content": content}}
 
 
@@ -1083,9 +1197,14 @@ def _call_model(provider: str, messages: List[Dict[str, Any]], model: str,
     """One model turn. `messages` holds the conversation in the provider's own format (no system message).
     force_answer turns lookups off for this turn, so the model must write its answer from what it already has."""
     if provider == "anthropic":
+        tools = anthropic_tools()
+        if research_on():
+            tools = [*tools, {"type": "web_search_20250305", "name": "web_search", "max_uses": RESEARCH_MAX_SEARCHES,
+                              "allowed_domains": research_domains()}]
         payload: Dict[str, Any] = {"model": model, "max_tokens": MAX_ANSWER_TOKENS,
-                                   "system": [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": CACHE}],
-                                   "messages": cached_messages(messages), "tools": anthropic_tools()}
+                                   "system": [{"type": "text", "text": build_system_prompt("anthropic"),
+                                               "cache_control": CACHE}],
+                                   "messages": cached_messages(messages), "tools": tools}
         if force_answer:
             payload["tool_choice"] = {"type": "none"}
         effort = (os.getenv("ASSISTANT_EFFORT") or "").strip().lower()
@@ -1096,7 +1215,7 @@ def _call_model(provider: str, messages: List[Dict[str, Any]], model: str,
                    "content-type": "application/json"}, "output_config")
         _raise_for(r, "Anthropic")
         return parse_anthropic(r.json())
-    payload = {"model": model, "messages": [{"role": "system", "content": SYSTEM_PROMPT}, *messages],
+    payload = {"model": model, "messages": [{"role": "system", "content": build_system_prompt("openai")}, *messages],
                "tools": TOOLS, "tool_choice": "none" if force_answer else "auto",
                "max_completion_tokens": MAX_ANSWER_TOKENS}
     effort = (os.getenv("ASSISTANT_EFFORT") or os.getenv("ASSISTANT_REASONING_EFFORT") or "").strip().lower()
@@ -1235,6 +1354,9 @@ def ask(question: str, history: Any = None, admin: str = "", attachment: Any = N
     forced_note = False
     billed_in = 0.0
     cached_in = 0
+    searches = 0
+    sources: Dict[str, str] = {}
+    suggest = suggestions_on()
     cut_off = False
     shortened = False
 
@@ -1245,7 +1367,7 @@ def ask(question: str, history: Any = None, admin: str = "", attachment: Any = N
                 error = "The question took too long to answer. Try a narrower question."
                 break
             rounds += 1
-            spent = _cost(model, billed_in, tokens_out) or 0.0
+            spent = (_cost(model, billed_in, tokens_out) or 0.0) + searches * WEB_SEARCH_USD
             force = (rounds > MAX_ROUNDS or time.time() - started > DEADLINE_SECONDS - 35
                      or spent >= _question_cap())
             if force and not forced_note:
@@ -1257,6 +1379,11 @@ def ask(question: str, history: Any = None, admin: str = "", attachment: Any = N
             cached_in += turn.get("cache_read", 0)
             tokens_out += turn["out"]
             reasoning += turn["reasoning"]
+            searches += turn.get("searches", 0)
+            sources.update(turn.get("sources") or {})
+            if turn.get("paused") and not turn["calls"]:
+                messages.append(turn["assistant_message"])     # a long web search paused; send it back to continue
+                continue
             if turn["calls"] and not force:
                 messages.append(turn["assistant_message"])
                 results: List[Tuple[str, str]] = []
@@ -1283,23 +1410,27 @@ def ask(question: str, history: Any = None, admin: str = "", attachment: Any = N
                 error = ("No answer was written. Try a narrower question (for example one sector, or your "
                          "holdings only).")
                 break
-            problems = check_answer(answer, evidence, check_numbers=check_numbers)
+            problems = check_answer(answer, evidence, check_numbers=check_numbers, suggestions=suggest,
+                                    sources=sources)
             if problems and not rewrote:
                 rewrote = True
                 messages.append({"role": "assistant", "content": answer})
                 messages.append({"role": "user", "content":
                                  "Your answer failed Sigmalytic's checks: " + "; ".join(problems) + ". Rewrite it. "
-                                 "Use only numbers exactly as the lookups returned them, or leave them out, and "
-                                 "follow every rule. Reply with the corrected answer only."})
+                                 "Use only numbers exactly as the lookups returned them (research numbers only inside "
+                                 "the Research context section, with links from your searches), or leave them out, "
+                                 "and follow every rule. Reply with the corrected answer only."})
                 continue
             break
     except Exception as exc:
         error = str(exc)[:300]
 
     cost = _cost(model, billed_in, tokens_out)
+    if cost is not None and searches:
+        cost = round(cost + searches * WEB_SEARCH_USD, 5)
     _record_spend(cost)
     usage = {"provider": provider, "model": model, "input_tokens": tokens_in, "cached_input_tokens": cached_in,
-             "output_tokens": tokens_out, "reasoning_tokens": reasoning, "cost_usd": cost,
+             "output_tokens": tokens_out, "reasoning_tokens": reasoning, "web_searches": searches, "cost_usd": cost,
              "seconds": round(time.time() - started, 1)}
 
     if error:
@@ -1309,8 +1440,10 @@ def ask(question: str, history: Any = None, admin: str = "", attachment: Any = N
                   "error": "The answer was withheld because it failed Sigmalytic's checks (" + "; ".join(problems) +
                            "). Try rephrasing the question."}
     else:
-        result = {"ok": True, "answer": answer, "disclaimer": DISCLAIMER, "lookups": lookups, "usage": usage,
-                  "rewritten": rewrote}
+        result = {"ok": True, "answer": answer, "disclaimer": DISCLAIMER_SUGGEST if suggest else DISCLAIMER,
+                  "lookups": lookups, "usage": usage, "rewritten": rewrote}
+        if sources:
+            result["sources"] = [{"url": u, "title": t} for u, t in sources.items()]
         if cut_off:
             result["notice"] = ("This answer hit the length limit and may be cut off at the end. Ask for a "
                                 "narrower list (one signal, one sector, or flagged holdings only).")

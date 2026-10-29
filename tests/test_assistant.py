@@ -37,7 +37,8 @@ def isolate(monkeypatch):
     a._LOCAL_SPEND.clear()
     a._FACTS_CACHE.clear()
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    for k in ("ANTHROPIC_API_KEY", "ASSISTANT_MODEL", "ASSISTANT_PROVIDER", "ASSISTANT_EFFORT"):
+    for k in ("ANTHROPIC_API_KEY", "ASSISTANT_MODEL", "ASSISTANT_PROVIDER", "ASSISTANT_EFFORT",
+              "ASSISTANT_SUGGESTIONS", "ASSISTANT_RESEARCH", "ASSISTANT_HOUSE_RULES"):
         monkeypatch.delenv(k, raising=False)
 
 
@@ -348,7 +349,7 @@ def test_image_answers_are_labelled_not_number_checked_but_still_advice_checked(
     monkeypatch.setattr(a, "_call_model", FakeModel([{"text": "The chart shows a high near $512.40."}]))
     out = a.ask("What does this chart show?", attachment=_att("c.png", PNG_1PX))
     assert out["ok"] and "could not be checked" in out["notice"]
-    bad = {"text": "You should buy it now."}
+    bad = {"text": "It is guaranteed to recover."}
     monkeypatch.setattr(a, "_call_model", FakeModel([bad, bad]))
     assert a.ask("Buy?", attachment=_att("c.png", PNG_1PX))["withheld"]
 
@@ -604,3 +605,89 @@ def test_losers_answer_passes_the_number_check(monkeypatch):
     monkeypatch.setattr(a, "_call_model", fake)
     out = a.ask("Which losers are below RSI 40?", attachment=_att("p.csv", POSITIONS))
     assert out["ok"], out
+
+
+# ── suggestions and research context ──
+
+def test_suggestion_mode_allows_buy_sell_hold_but_never_promises():
+    ev = {"lookups": [a.tool_search_scan(signals=["breakdown"])]}
+    ok = "### Suggestions\n- NVDA: consider selling; it closed at $171.25, below $180.40. You should sell if it fails."
+    assert a.check_answer(ok, ev, suggestions=True) == []
+    assert any("advice" in p for p in a.check_answer(ok, ev, suggestions=False))
+    assert any("promise" in p for p in a.check_answer("NVDA will recover soon.", ev, suggestions=True))
+    assert any("promise" in p for p in a.check_answer("A guaranteed winner.", ev, suggestions=True))
+
+
+def test_prompt_follows_the_settings(monkeypatch):
+    assert "### Suggestions" in a.build_system_prompt() and "Never sell winners" in a.build_system_prompt()
+    monkeypatch.setenv("ASSISTANT_HOUSE_RULES", "Only trim positions down more than 20%.")
+    assert "Only trim positions down more than 20%." in a.build_system_prompt()
+    monkeypatch.setenv("ASSISTANT_SUGGESTIONS", "0")
+    assert "never advise" in a.build_system_prompt() and "### Suggestions" not in a.build_system_prompt()
+    monkeypatch.setenv("ASSISTANT_RESEARCH", "0")
+    assert "Research context" not in a.build_system_prompt()
+
+
+def test_research_section_numbers_exempt_but_links_must_come_from_searches():
+    ev = {"lookups": [a.tool_search_scan(signals=["breakdown"])]}
+    seen = {"https://www.nber.org/papers/w12345": "Momentum paper"}
+    ans = ("NVDA closed at $171.25.\n\n### Research context\nLosers over 12 months lagged by 8.4% a year "
+           "([NBER](https://www.nber.org/papers/w12345/)).")
+    assert a.check_answer(ans, ev, suggestions=True, sources=seen) == []
+    fake = ans.replace("w12345/", "w99999")
+    assert any("no search returned" in p for p in a.check_answer(fake, ev, suggestions=True, sources=seen))
+    assert any("no linked source" in p for p in
+               a.check_answer("### Research context\nStudies show it works.", ev, suggestions=True, sources=seen))
+    assert any("numbers" in p for p in a.check_answer("NVDA closed at $150.00.\n" + ans, ev, sources=seen))
+
+
+def test_split_research_stops_at_the_next_heading():
+    main, research = a.split_research("Intro\n### Research context\nR1\n### Suggestions\nS1")
+    assert "R1" in research and "S1" in main and "R1" not in main
+
+
+def test_parse_anthropic_collects_sources_searches_and_pause():
+    body = {"stop_reason": "pause_turn",
+            "content": [{"type": "server_tool_use", "id": "s1", "name": "web_search", "input": {"query": "momentum"}},
+                        {"type": "web_search_tool_result", "tool_use_id": "s1",
+                         "content": [{"type": "web_search_result", "url": "https://ssrn.com/abstract=1", "title": "T"}]}],
+            "usage": {"input_tokens": 10, "output_tokens": 5, "server_tool_use": {"web_search_requests": 1}}}
+    t = a.parse_anthropic(body)
+    assert t["paused"] and t["searches"] == 1 and t["sources"] == {"https://ssrn.com/abstract=1": "T"}
+    assert t["calls"] == []
+
+
+def test_paused_search_is_continued_and_searches_are_costed(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    turns = [
+        {"text": "", "calls": [], "in": 1000, "out": 100, "reasoning": 0, "paused": True, "searches": 2,
+         "sources": {"https://ssrn.com/abstract=1": "T"}, "assistant_message": {"role": "assistant", "content": []}},
+        {"text": "Nothing flagged.\n\n### Research context\nMomentum persists ([SSRN](https://ssrn.com/abstract=1)).",
+         "calls": [], "in": 1000, "out": 100, "reasoning": 0, "assistant_message": {}},
+    ]
+    sent = []
+    monkeypatch.setattr(a, "_call_model", lambda p, m, mo, force_answer=False: sent.append(list(m)) or turns.pop(0))
+    out = a.ask("Is my exit rule sound?")
+    assert out["ok"] and out["usage"]["web_searches"] == 2 and out["sources"][0]["url"].startswith("https://ssrn")
+    assert sent[1][-1]["role"] == "assistant"                       # the paused turn was sent back to continue
+    assert out["usage"]["cost_usd"] == pytest.approx((2000 * 2 + 200 * 10) / 1e6 + 0.02)
+    assert "not advice to anyone else" in out["disclaimer"]
+
+
+def test_claude_request_includes_trusted_web_search(monkeypatch):
+    sent = {}
+
+    class R:
+        status_code = 200
+        headers = {}
+
+        def json(self):
+            return {"content": [{"type": "text", "text": "ok"}], "usage": {"input_tokens": 1, "output_tokens": 1}}
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setattr(a, "_post", lambda url, payload, headers, opt: sent.update(payload) or R())
+    a._call_model("anthropic", [{"role": "user", "content": "q"}], "claude-sonnet-5-5")
+    ws = [t for t in sent["tools"] if t.get("type") == "web_search_20250305"]
+    assert ws and "ssrn.com" in ws[0]["allowed_domains"] and ws[0]["max_uses"] == a.RESEARCH_MAX_SEARCHES
+    monkeypatch.setenv("ASSISTANT_RESEARCH", "0")
+    a._call_model("anthropic", [{"role": "user", "content": "q"}], "claude-sonnet-5-5")
+    assert not [t for t in sent["tools"] if t.get("type") == "web_search_20250305"]
