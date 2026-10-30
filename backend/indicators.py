@@ -36,3 +36,32 @@ def rsi_wilder(closes: Sequence[float], period: int = 14) -> Optional[float]:
     if loss == 0:
         return 100.0 if gain > 0 else 50.0
     return round(100.0 - 100.0 / (1.0 + gain / loss), 2)
+
+
+def rsi_series(closes: Sequence[float], period: int = 14) -> List[Optional[float]]:
+    """RSI(period) for every bar (Wilder), aligned with `closes`; None until there are period + 1 closes. The last
+    value equals rsi_wilder(closes, period)."""
+    vals = [float(c) for c in closes]
+    out: List[Optional[float]] = [None] * len(vals)
+    if len(vals) < period + 1:
+        return out
+    changes = [b - a for a, b in zip(vals, vals[1:])]
+    gain = sum(max(d, 0.0) for d in changes[:period]) / period
+    loss = sum(max(-d, 0.0) for d in changes[:period]) / period
+
+    def value(g: float, l: float) -> float:
+        if l == 0:
+            return 100.0 if g > 0 else 50.0
+        return round(100.0 - 100.0 / (1.0 + g / l), 2)
+
+    out[period] = value(gain, loss)
+    for i, d in enumerate(changes[period:], start=period + 1):
+        gain = (gain * (period - 1) + max(d, 0.0)) / period
+        loss = (loss * (period - 1) + max(-d, 0.0)) / period
+        out[i] = value(gain, loss)
+    return out
+
+
+def sma(closes: Sequence[float], n: int) -> Optional[float]:
+    vals = [float(c) for c in closes]
+    return round(sum(vals[-n:]) / n, 2) if len(vals) >= n else None
