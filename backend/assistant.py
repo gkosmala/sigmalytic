@@ -1240,7 +1240,26 @@ def parse_anthropic(body: Dict[str, Any]) -> Dict[str, Any]:
             "cut_off": body.get("stop_reason") == "max_tokens",
             "paused": body.get("stop_reason") == "pause_turn", "sources": sources,
             "searches": int((u.get("server_tool_use") or {}).get("web_search_requests", 0) or 0),
-            "assistant_message": {"role": "assistant", "content": content}}
+            "assistant_message": {"role": "assistant", "content": complete_server_tools(content)}}
+
+
+def complete_server_tools(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Claude rejects a conversation that contains a web_search call without its result ("server_tool_use ...
+    without a corresponding web_search_tool_result"). That happens when a reply stops for one of our lookups (or
+    pauses) while a search it started is unfinished. Such unfinished searches, and any result without its call,
+    are removed before the reply is sent back; finished searches and everything else are kept as they are."""
+    calls = {b.get("id") for b in content if b.get("type") == "server_tool_use"}
+    results = {b.get("tool_use_id") for b in content if str(b.get("type", "")).endswith("_tool_result")
+               and b.get("type") != "tool_result"}
+    out = []
+    for b in content:
+        t = b.get("type")
+        if t == "server_tool_use" and b.get("id") not in results:
+            continue
+        if t != "tool_result" and str(t or "").endswith("_tool_result") and b.get("tool_use_id") not in calls:
+            continue
+        out.append(b)
+    return out
 
 
 def parse_openai(body: Dict[str, Any]) -> Dict[str, Any]:
