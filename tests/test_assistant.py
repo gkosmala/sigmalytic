@@ -210,7 +210,7 @@ def test_parse_anthropic_reply():
     t = a.parse_anthropic(body)
     assert t["calls"] == [{"id": "tu1", "name": "search_scan", "input": {"new_only": True}, "input_error": None}]
     assert t["text"] == "Looking." and t["in"] == 1000 and t["out"] == 50 and t["reasoning"] == 20
-    assert t["assistant_message"]["content"] is body["content"]          # thinking blocks are sent back intact
+    assert t["assistant_message"]["content"] == body["content"]          # thinking blocks are sent back intact
     assert a.anthropic_tools()[0]["input_schema"]["type"] == "object"
 
 
@@ -732,3 +732,18 @@ def test_setup_states_are_defined_for_the_model():
         assert word in note
     assert "never treat a Watching state as support" in a.build_system_prompt()
     assert not a.ch.method_words_in(note) and not a.EXTRA_BLOCKED.search(note)
+
+
+def test_unfinished_web_search_is_removed_before_sending_back():
+    body = {"stop_reason": "tool_use", "usage": {"input_tokens": 1, "output_tokens": 1},
+            "content": [{"type": "text", "text": "Checking."},
+                        {"type": "server_tool_use", "id": "srv_done", "name": "web_search", "input": {"query": "a"}},
+                        {"type": "web_search_tool_result", "tool_use_id": "srv_done", "content": []},
+                        {"type": "server_tool_use", "id": "srv_open", "name": "web_search", "input": {"query": "b"}},
+                        {"type": "tool_use", "id": "tu1", "name": "get_indicators", "input": {"symbols": ["BA"]}}]}
+    t = a.parse_anthropic(body)
+    sent = t["assistant_message"]["content"]
+    assert [b.get("id") or b.get("tool_use_id") for b in sent] == [None, "srv_done", "srv_done", "tu1"]
+    assert t["calls"][0]["id"] == "tu1"
+    orphan = a.complete_server_tools([{"type": "web_search_tool_result", "tool_use_id": "x", "content": []}])
+    assert orphan == []
