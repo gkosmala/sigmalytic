@@ -636,9 +636,54 @@ TOOL_FUNCS: Dict[str, Callable[..., Dict[str, Any]]] = {
     "list_daily_reports": tool_list_daily_reports,
     "get_daily_report": tool_get_daily_report,
     "review_holdings": tool_review_holdings,
+    "get_price_history": lambda **kw: _market().tool_get_price_history(**kw),
+    "get_indicators": lambda **kw: _market().tool_get_indicators(**kw),
+    "test_rsi_exit": lambda **kw: _market().tool_test_rsi_exit(**kw),
 }
 
+
+def _market():
+    from backend import assistant_market
+    return assistant_market
+
+_TF_ENUM = ["1Day", "1Week", "4Hour", "1Hour"]
+
 TOOLS = [
+    {"type": "function", "function": {
+        "name": "get_price_history",
+        "description": "Price bars for one stock straight from Alpaca (split-adjusted, the same feed as the scan): "
+                       "date, open, high, low, close, volume, plus the change, high and low over the window. Daily "
+                       "up to 10 years; also weekly, 4-hour and hourly. Lists at most the latest 250 bars.",
+        "parameters": {"type": "object", "properties": {
+            "symbol": {"type": "string"}, "timeframe": {"type": "string", "enum": _TF_ENUM},
+            "bars": {"type": "integer", "description": "How many bars (default 60)."}},
+            "required": ["symbol"], "additionalProperties": False}}},
+    {"type": "function", "function": {
+        "name": "get_indicators",
+        "description": "Current indicators from Alpaca bars for up to 20 stocks (any stock Alpaca has, not only "
+                       "the scanned universe): close, RSI at any periods, moving averages and % above or below "
+                       "them, and 20-, 60- and 252-bar returns. Computed by code.",
+        "parameters": {"type": "object", "properties": {
+            "symbols": {"type": "array", "items": {"type": "string"}},
+            "timeframe": {"type": "string", "enum": _TF_ENUM},
+            "rsi_periods": {"type": "array", "items": {"type": "integer"}, "description": "Default [14]."},
+            "sma_periods": {"type": "array", "items": {"type": "integer"}, "description": "Default [20, 50, 200]."}},
+            "required": ["symbols"], "additionalProperties": False}}},
+    {"type": "function", "function": {
+        "name": "test_rsi_exit",
+        "description": "Tests RSI exit settings on up to 10 years of Alpaca daily bars for up to 10 stocks: for each "
+                       "RSI period, what happened over the next N trading days after RSI crossed below the "
+                       "threshold. The best period is chosen on the first 70% of the history and checked on the "
+                       "last 30%, which it never saw, next to RSI(14). Computed by code; takes a few seconds per "
+                       "stock.",
+        "parameters": {"type": "object", "properties": {
+            "symbols": {"type": "array", "items": {"type": "string"}},
+            "periods": {"type": "array", "items": {"type": "integer"},
+                        "description": "RSI periods to compare (default 2, 5, 7, 9, 14, 21, 28)."},
+            "threshold": {"type": "number", "description": "Default 40."},
+            "horizon": {"type": "integer", "description": "Trading days after the signal (default 20)."},
+            "years": {"type": "integer", "description": "History to use, at most 10 (default 10)."}},
+            "required": ["symbols"], "additionalProperties": False}}},
     {"type": "function", "function": {
         "name": "review_holdings",
         "description": "Reviews the attached broker positions file: for every stock position, the platform reads "
@@ -747,6 +792,12 @@ _BASE_PROMPT = (
     "support for either view. 'No setup' means the setup engine found no setup now.\n"
     "12. The tickers line for an uploaded file lists every ticker code read from it; check them all in one "
     "search_scan call, never split them.\n"
+    "15. You can reach Alpaca market data through get_price_history, get_indicators and test_rsi_exit (the "
+    "platform's own Alpaca connection, split-adjusted bars, up to 10 years daily). Use them for price history, RSI at "
+    "other periods, moving averages, returns, and stocks outside the scan; never say Alpaca cannot be reached. For "
+    "a test_rsi_exit result, lead with the out-of-sample figures and compare them with RSI(14); a setting that only "
+    "wins in-sample is not evidence. test_rsi_exit takes at most 10 symbols per call and 3 calls per question; for "
+    "more, say a whole-universe study can be run on the scanner worker.\n"
     "13. For a positions file and questions about losers, gains, cost or RSI, call review_holdings (one call); its "
     "gain/loss, totals and RSI are computed by code, so use them as given and never compute your own. {rule13}"
     "{extra}"
