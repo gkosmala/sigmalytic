@@ -5993,6 +5993,38 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     ], sx={"marginBottom": "16px", "border": "1px solid rgba(52,211,153,.55)",
            "boxShadow": "0 0 18px rgba(52,211,153,.25), 0 8px 32px rgba(0,0,0,.32)"})
 
+    # ── Platform Review -- weekly AI review of the platform's own results, with suggested improvements. ──
+    platform_review_block = _admin_card([
+        html.Div("PLATFORM REVIEW", style={"fontSize": "12px", "fontWeight": "800", "color": WHITE,
+                                           "marginBottom": "6px"}),
+        html.Div("Claude reads the platform's own results (signal outcomes by grade and type, the grade mix, "
+                 "Content Hub runs and Assistant answers) for the last 7 days against the 28 days before, and "
+                 "writes findings with suggested improvements. Every number is checked against the evidence. "
+                 "Nothing in the platform is changed: each suggestion waits for your decision. Automatic runs "
+                 "every Friday at 9:15 pm Eastern; Manual skips the scheduled run. Run review now works in "
+                 "either mode.",
+                 style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"}),
+        dcc.Store(id="platform-review-state", data={}),
+        dcc.Interval(id="platform-review-poll", interval=15 * 1000, n_intervals=0, disabled=True),
+        html.Div([
+            dcc.RadioItems(id="platform-review-mode",
+                           options=[{"label": " Automatic", "value": "automatic"},
+                                    {"label": " Manual", "value": "manual"}],
+                           value=None, inline=True,
+                           inputStyle={"marginRight": "4px"},
+                           labelStyle={"marginRight": "16px", "fontSize": "13px", "color": WHITE,
+                                       "cursor": "pointer"}),
+            html.Button("Run review now", id="platform-review-run-btn", n_clicks=0,
+                        style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
+                               "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700",
+                               "cursor": "pointer", "marginLeft": "8px"}),
+        ], style={"display": "flex", "alignItems": "center", "flexWrap": "wrap", "gap": "8px",
+                  "marginBottom": "10px"}),
+        html.Div(id="platform-review-msg", style={"fontSize": "12px", "color": YELLOW_DIM, "marginBottom": "6px"}),
+        dcc.Loading(html.Div(id="platform-review-result", style={"fontSize": "12px", "color": WHITE}),
+                    type="dot", color=TEAL),
+    ], sx={"marginBottom": "16px"})
+
     # ── Daily Report -> Content Hub: tap a symbol from a stored daily report to get the full Content Hub package
     # (blog draft, share image, platform teasers). Same backend as Content Hub; drafts only, nothing posts.
     report_hub_block = _admin_card([
@@ -6369,6 +6401,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                          style={"color":WHITE,"fontSize":"12px","marginTop":"8px"}),
             ], sx={"marginBottom": "16px"}),
             assistant_block,
+            platform_review_block,
             content_hub_block,
             report_hub_block,
             catalyst_engine_block,
@@ -6636,6 +6669,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         ], style={"marginBottom":"0"}),
 
         assistant_block,
+        platform_review_block,
         content_hub_block,
         report_hub_block,
         catalyst_engine_block,
@@ -11302,6 +11336,129 @@ def sort_weis_state_by_bars_ago(n_clicks, rows):
 
 ASSISTANT_UPLOAD_LIMITS = {"png": 5, "jpg": 5, "jpeg": 5, "gif": 5, "webp": 5, "pdf": 10, "csv": 5, "tsv": 5,
                            "txt": 5, "md": 5, "json": 5, "xlsx": 5, "docx": 5}   # MB; the backend enforces these too
+
+
+# ── Platform Review (Admin tab) ───────────────────────────────────────────
+# All inputs live inside the Platform Review card, so these callbacks only fire while the Admin tab is showing.
+
+def _platform_review_get(session):
+    r = req.get(f"{BACKEND_HTTP}/api/admin/platform-review/status", headers=_auth_headers(session), timeout=30)
+    if r.status_code in (401, 403):
+        return None, "Admin access only, or your session expired. Please sign in again."
+    if not r.ok:
+        return None, f"Could not load the Platform Review (error {r.status_code})."
+    return r.json(), None
+
+
+def _render_platform_review(st):
+    """Draws the mode line, the latest report's summary and findings, and recent history."""
+    st = st or {}
+    rows = []
+    if st.get("mode") == "automatic":
+        rows.append(html.Div(f"Automatic: next review {st.get('next_run_et')}.", style={"color": MUTED}))
+    else:
+        rows.append(html.Div("Manual: the Friday review is off. Use Run review now.", style={"color": MUTED}))
+    if st.get("running"):
+        rows.append(html.Div("A review is running. This updates by itself when it finishes (usually 1-2 minutes).",
+                             style={"color": YELLOW_DIM, "marginTop": "6px"}))
+    latest = st.get("latest")
+    if not latest:
+        rows.append(html.Div("No review yet.", style={"color": MUTED, "marginTop": "10px"}))
+        return html.Div(rows)
+    u = latest.get("usage") or {}
+    cost = u.get("cost_usd")
+    rows.append(html.Div(
+        f"Latest: {latest.get('generated_at_et')} \u00b7 {latest.get('trigger', '').capitalize()}"
+        + (f" \u00b7 {', '.join(u.get('models') or [])} \u00b7 ${cost:.4f}" if isinstance(cost, (int, float)) else ""),
+        style={"fontWeight": "700", "marginTop": "12px"}))
+    rows.append(html.Div(latest.get("summary") or "", style={"marginTop": "6px", "lineHeight": "1.6"}))
+    if latest.get("note"):
+        rows.append(html.Div(latest["note"], style={"color": YELLOW_DIM, "marginTop": "6px"}))
+    for i, f in enumerate(latest.get("findings") or [], 1):
+        rows.append(html.Div([
+            html.Div(f"{i}. {f.get('title')}", style={"fontWeight": "700", "fontSize": "13px"}),
+            *[html.Div([html.Span(label + ": ", style={"fontWeight": "700"}), f.get(key) or ""],
+                       style={"marginTop": "4px", "lineHeight": "1.55"})
+              for label, key in (("Evidence", "evidence"), ("Suggested improvement", "suggestion"),
+                                 ("Expected effect", "expected_effect"), ("Risk", "risk"),
+                                 ("Confidence", "confidence"))],
+        ], style={"border": f"1px solid {BORDER}", "borderRadius": "8px", "padding": "10px 12px",
+                  "marginTop": "10px", "background": "rgba(0,0,0,.18)"}))
+    if latest.get("removed"):
+        rows.append(html.Div("Removed by the number check: " + "; ".join(
+            f"{x.get('title')} ({x.get('reason')})" for x in latest["removed"]),
+            style={"color": MUTED, "marginTop": "8px", "fontSize": "11px"}))
+    unavailable = (latest.get("evidence") or {}).get("unavailable") or []
+    if unavailable:
+        rows.append(html.Div("Not available this run: " + "; ".join(unavailable),
+                             style={"color": MUTED, "marginTop": "6px", "fontSize": "11px"}))
+    hist = [h for h in (st.get("history") or []) if h.get("id") != latest.get("id")][:5]
+    if hist:
+        rows.append(html.Div("Earlier reviews: " + " \u00b7 ".join(
+            f"{h.get('generated_at_et')} ({h.get('trigger')})" for h in hist),
+            style={"color": MUTED, "marginTop": "10px", "fontSize": "11px"}))
+    return html.Div(rows)
+
+
+@app.callback(Output("platform-review-result", "children"),
+              Output("platform-review-mode", "value"),
+              Output("platform-review-state", "data"),
+              Output("platform-review-poll", "disabled"),
+              Input("platform-review-poll", "n_intervals"),
+              State("s-session", "data"))
+def refresh_platform_review(_n, session):
+    """Loads the Platform Review when the Admin tab opens, and polls every 15 seconds only while a review runs."""
+    try:
+        st, err = _platform_review_get(session)
+    except Exception as exc:
+        st, err = None, f"Could not reach the backend: {str(exc)[:160]}"
+    if err:
+        return html.Div(err, style={"color": YELLOW_DIM}), no_update, no_update, True
+    return _render_platform_review(st), st.get("mode"), {"mode": st.get("mode")}, not st.get("running")
+
+
+@app.callback(Output("platform-review-msg", "children"),
+              Output("platform-review-state", "data", allow_duplicate=True),
+              Input("platform-review-mode", "value"),
+              State("platform-review-state", "data"),
+              State("s-session", "data"),
+              prevent_initial_call=True)
+def set_platform_review_mode(mode, state, session):
+    """Saves the Automatic / Manual toggle. Ignores the value being filled in from the saved setting on load."""
+    if not mode or mode == (state or {}).get("mode"):
+        return no_update, no_update
+    try:
+        r = req.post(f"{BACKEND_HTTP}/api/admin/platform-review/mode", json={"mode": mode},
+                     headers=_auth_headers(session), timeout=20)
+        d = r.json() if r.ok else {"ok": False, "error": f"error {r.status_code}"}
+    except Exception as exc:
+        d = {"ok": False, "error": str(exc)[:160]}
+    if not d.get("ok"):
+        return f"Setting not saved: {d.get('error')}", no_update
+    msg = ("Automatic: the review will run every Friday at 9:15 pm Eastern." if mode == "automatic"
+           else "Manual: the Friday review is off. Run review now still works.")
+    return msg, {"mode": mode}
+
+
+@app.callback(Output("platform-review-msg", "children", allow_duplicate=True),
+              Output("platform-review-poll", "disabled", allow_duplicate=True),
+              Input("platform-review-run-btn", "n_clicks"),
+              State("s-session", "data"),
+              prevent_initial_call=True)
+def run_platform_review_now(n_clicks, session):
+    """Starts a review now (either mode) and turns on polling until the report is ready."""
+    if not n_clicks:
+        return no_update, no_update
+    try:
+        r = req.post(f"{BACKEND_HTTP}/api/admin/platform-review/run", headers=_auth_headers(session), timeout=30)
+        d = r.json() if r.ok else {"ok": False, "error": f"error {r.status_code}"}
+    except Exception as exc:
+        d = {"ok": False, "error": str(exc)[:160]}
+    if not d.get("ok"):
+        return f"Review not started: {d.get('error')}", no_update
+    if d.get("status") == "running":
+        return "A review is already running; the report will appear here when it finishes.", False
+    return "Review started. The report will appear here when it finishes (usually 1-2 minutes).", False
 
 
 @app.callback(Output("assistant-attachment", "data"),
