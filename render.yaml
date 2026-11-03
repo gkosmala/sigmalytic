@@ -219,3 +219,23 @@ services:
       - key: SIGMALYTIC_BACKEND_URL
         value: "https://sigmalytic-backend.onrender.com"
 
+
+  - type: cron
+    name: sigmalytic-platform-review
+    runtime: python
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: python tools/render_platform_review.py
+    # Weekly Platform Review: Fridays at 9:15 pm Eastern. Render schedules in
+    # UTC, so this fires at 01:15 and 02:15 UTC on Saturday; the backend lets
+    # through only the call that is 9:15 pm in New York (daylight vs. standard
+    # time) and skips both when the Admin tab toggle is set to Manual.
+    schedule: "15 1,2 * * SAT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11
+      - key: SIGMALYTIC_BACKEND_URL
+        value: "https://sigmalytic-backend.onrender.com"
+      # Same value as on sigmalytic-backend (the daily report cron uses it too).
+      - key: REPORT_CRON_SECRET
+        sync: false

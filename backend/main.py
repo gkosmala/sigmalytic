@@ -3087,6 +3087,11 @@ def content_hub_generate(payload: dict, _admin: str = Depends(require_admin)):
     if len(_CONTENT_HUB_REUSE) > 60:
         _CONTENT_HUB_REUSE.clear()
     _CONTENT_HUB_REUSE[key] = out
+    try:  # the weekly Platform Review reads this run log; logging must never break the drafts
+        from backend import platform_review
+        platform_review.record_content_hub_run(symbol, out)
+    except Exception:
+        pass
     return out
 
 
@@ -3109,6 +3114,42 @@ def assistant_log(limit: int = 50, _admin: str = Depends(require_admin)):
     from backend import assistant
 
     return assistant.recent_log(limit)
+
+
+@app.get("/api/admin/platform-review/status")
+def platform_review_status(_admin: str = Depends(require_admin_or_cron)):
+    """Platform Review (admin only): mode (automatic/manual), next scheduled run, whether a review is running,
+    the latest report and recent report history. See backend/platform_review.py."""
+    from backend import platform_review
+
+    return platform_review.status()
+
+
+@app.post("/api/admin/platform-review/mode")
+def platform_review_mode(payload: dict, _admin: str = Depends(require_admin)):
+    """Platform Review (admin only): sets the mode. 'automatic' runs every Friday at 9:15 pm Eastern; 'manual'
+    skips the scheduled run. Run now works in either mode."""
+    from backend import platform_review
+
+    return platform_review.set_mode((payload or {}).get("mode"))
+
+
+@app.post("/api/admin/platform-review/run")
+def platform_review_run(admin: str = Depends(require_admin)):
+    """Platform Review (admin only): starts a review now, in either mode. Returns at once; poll the status
+    endpoint for the report. Read-only on platform data; nothing is changed."""
+    from backend import platform_review
+
+    return platform_review.start_review("manual", admin)
+
+
+@app.get("/api/admin/platform-review/scheduled")
+def platform_review_scheduled(_admin: str = Depends(require_admin_or_cron)):
+    """Platform Review cron entry (tools/render_platform_review.py): starts the review only when the mode is
+    automatic and it is Friday 9:15 pm in New York; otherwise reports why it was skipped."""
+    from backend import platform_review
+
+    return platform_review.start_scheduled()
 
 
 @app.get("/api/admin/report-symbols")
