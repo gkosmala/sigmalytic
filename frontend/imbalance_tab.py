@@ -2,15 +2,15 @@
 """
 frontend/imbalance_tab.py
 -------------------------
-Imbalance Alerts tab. While the feature is in testing it is shown to
-administrators only: the recent alert log and the track record (how often
-alerts were right at 1, 3, 5 and 10 trading days). Everyone else sees a short
-"coming soon" note.
+Imbalance Alerts. While the feature is in testing it lives inside the Admin
+tab only (no navigation button): pillar readings, the track record (how often
+alerts were right at 1, 3, 5 and 10 trading days) and the recent alert log.
 
 Plugs into app.py:
   1. from imbalance_tab import build_imbalance_tab
-  2. ALL_TABS: ("imbalance", "Imbalance Alerts")
-  3. render_main: elif tab == "imbalance": main = build_imbalance_tab(session, admin)
+  2. render_main, tab == "admin" (admins only): build_imbalance_tab(session, admin=True)
+  To give it its own tab again later: re-add ("imbalance", "Imbalance Alerts") to
+  ALL_TABS, its button to the s-tab clientside callback, and an elif branch.
 """
 from __future__ import annotations
 
@@ -141,10 +141,23 @@ def render_track_record(tr: Dict[str, Any]) -> html.Div:
         body = html.Table([html.Thead(html.Tr([_head("After"), _head("Alerts scored"), _head("Right direction"),
                                                _head("Average move")])), html.Tbody(rows)],
                           style={"width": "100%", "borderCollapse": "collapse"})
-    return _card([_section(f"Track record ({tr.get('alerts', 0)} alerts logged)"), body,
-                  html.Div("Right direction means price moved the way the alert said. Moves are close to close "
-                           "from the alert price. A high-probability label should wait for a meaningful sample.",
+    signals = tr.get("signals", tr.get("alerts", 0))
+    return _card([_section(f"Track record ({signals} signals from {tr.get('alerts', 0)} alerts logged)"), body,
+                  html.Div("Each signal is scored once: the first alert per symbol, direction and trading day, so "
+                           "repeats of the same call are not counted again. Right direction means price moved the way "
+                           "the alert said. Moves are close to close from the alert price. A high-probability label "
+                           "should wait for a meaningful sample.",
                            style={"fontSize": "11px", "color": MUTED, "marginTop": "10px"})])
+
+
+def _reading_text(p: Optional[Dict[str, Any]]) -> str:
+    """One pillar's reading: direction and strength, or why it had nothing."""
+    if not p:
+        return "-"
+    if p.get("available") is False:
+        return "No data"
+    d = str(p.get("direction") or "NEUTRAL")
+    return f"{d.title()} {float(p.get('strength') or 0):.0f}"
 
 
 def _alert_row(r: Dict[str, Any]) -> html.Tr:
@@ -158,6 +171,7 @@ def _alert_row(r: Dict[str, Any]) -> html.Tr:
         _cell(r.get("direction", ""), dcolor, bold=True),
         _cell(f"{r.get('tier', '')} ({r.get('pillars_agreeing', '')} of 3)"),
         _cell(", ".join(agreeing)),
+        _cell(_reading_text(((detail.get("pillars") or {}).get("options_flow"))), mono=True),
         _cell(f"${float(r.get('entry_price') or 0):,.2f}", mono=True),
     ]
     for h in HORIZONS:
@@ -170,13 +184,48 @@ def _alert_row(r: Dict[str, Any]) -> html.Tr:
 def render_log(rows: List[Dict[str, Any]]) -> html.Div:
     if not rows:
         return _card([_section("Recent alerts"),
-                      _note("No alerts yet. Alerts appear here when at least two of the three pillars agree.")])
+                      _note("No alerts yet. Alerts appear here when options flow and at least one other pillar agree.")])
     head = html.Thead(html.Tr([_head(x) for x in
-                               ("Time (UTC)", "Symbol", "Direction", "Tier", "Pillars", "Price",
+                               ("Time (UTC)", "Symbol", "Direction", "Tier", "Pillars", "Options reading", "Price",
                                 "+1d", "+3d", "+5d", "+10d", "Emailed")]))
     return _card([_section("Recent alerts"),
                   html.Div(html.Table([head, html.Tbody([_alert_row(r) for r in rows])],
                                       style={"width": "100%", "borderCollapse": "collapse"}),
+                           style={"overflowX": "auto"})])
+
+
+def render_readings(readings: List[Dict[str, Any]], floor: float = 55.0) -> html.Div:
+    """Every symbol's three pillar readings from the latest scan, so it is visible why
+    nothing fired (and what the options pillar actually scores)."""
+    title = _section("Pillar readings (latest scan)")
+    if not readings:
+        return _card([title, _note("No readings yet. They appear after the next scan.")])
+    rows = []
+    for r in sorted(readings, key=lambda x: x.get("symbol", "")):
+        p = r.get("pillars") or {}
+        opt = p.get("options_flow") or {}
+        if r.get("fired"):
+            result, color = f"Fired {r.get('direction', '')}", TEAL_DIM
+        elif r.get("blocked"):
+            result, color = f"Blocked: {r['blocked']}", YELLOW_DIM
+        else:
+            result, color = "No imbalance", MUTED
+        rows.append(html.Tr([
+            _cell(r.get("symbol", ""), bold=True),
+            _cell(_reading_text(opt), mono=True),
+            _cell(opt.get("evidence") or "", MUTED),
+            _cell(_reading_text(p.get("price_structure")), mono=True),
+            _cell(_reading_text(p.get("volume_flow")), mono=True),
+            _cell(result, color),
+        ]))
+    at = str(readings[0].get("at", ""))[:16].replace("T", " ")
+    head = html.Thead(html.Tr([_head(x) for x in ("Symbol", "Options flow", "Options evidence", "Price structure",
+                                                  "Volume flow", "Result")]))
+    return _card([title,
+                  html.Div(f"Scan at {at} UTC. A pillar votes only at strength {floor:.0f} or more, and options "
+                           "flow must be one of the agreeing pillars.",
+                           style={"fontSize": "12px", "color": MUTED, "marginBottom": "8px"}),
+                  html.Div(html.Table([head, html.Tbody(rows)], style={"width": "100%", "borderCollapse": "collapse"}),
                            style={"overflowX": "auto"})])
 
 
@@ -196,7 +245,8 @@ def render_scan_result(res: Dict[str, Any]) -> html.Div:
         box.append(html.Div("Errors: " + "; ".join(f"{x['symbol']}: {x['error']}" for x in errors),
                             style={"fontSize": "12px", "color": RED_DIM, "marginBottom": "6px"}))
     if not fired and not errors:
-        box.append(html.Div("Nothing fired: no symbol had at least two pillars agreeing with none against.",
+        box.append(html.Div("Nothing fired: no symbol had options flow plus at least one other pillar agreeing "
+                            "with none against. See Pillar readings for each symbol.",
                             style={"fontSize": "12px", "color": MUTED}))
     return html.Div(box)
 
@@ -204,7 +254,9 @@ def render_scan_result(res: Dict[str, Any]) -> html.Div:
 def build_panels(session: Optional[dict]) -> List[Any]:
     """The Track record and Recent alerts panels (reloaded after a manual scan)."""
     parts: List[Any] = []
-    for label, path, renderer in (("Track record", "/api/imbalance/track-record", render_track_record),
+    for label, path, renderer in (("Pillar readings", "/api/imbalance/readings",
+                                   lambda d: render_readings(d.get("readings") or [])),
+                                  ("Track record", "/api/imbalance/track-record", render_track_record),
                                   ("Recent alerts", "/api/imbalance/log?limit=100",
                                    lambda d: render_log(d.get("alerts") or []))):
         try:
@@ -217,7 +269,8 @@ def build_panels(session: Optional[dict]) -> List[Any]:
 def build_imbalance_tab(session: Optional[dict] = None, admin: bool = False) -> html.Div:
     intro = html.Div(
         "Raised when options flow, price structure and volume flow line up on the same side. "
-        "At least two of the three must agree and none may disagree; all three is marked STRONG.",
+        "Options flow must agree, together with at least one of the other two, and none may disagree; "
+        "all three is marked STRONG. Scans run every 15 minutes from 9:30 a.m. to 4:00 p.m. Eastern.",
         style={"fontSize": "12px", "color": MUTED, "marginBottom": "16px", "maxWidth": "760px"})
     if not admin:
         return html.Div([_title(), intro,

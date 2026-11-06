@@ -12741,7 +12741,9 @@ ALL_TABS = [
     ("weis_radar",  "Sigma Radar"),
     ("status",      "Live Opportunity Center"),
     ("weis",        "Sigma Analysis"),
-    ("imbalance",   "Imbalance Alerts"),
+    # MOVED (2026-11-06, at explicit request): Imbalance Alerts is admin-only
+    # while it is being tested, so it lives inside the Admin tab now (see the
+    # tab=="admin" branch of render_main) instead of its own nav button.
     ("heatmap",     "Heat Map"),
     # ARCHIVED (later session, at explicit request): Radar Screen,
     # Intelligence Change Detector, and Scoreboard were removed from
@@ -13293,7 +13295,7 @@ app.clientside_callback(
             'tab-home', 'tab-command', 'tab-heatmap', 'tab-weis_radar',
             'tab-weis', 'tab-behavior', 'tab-import', 'tab-portfolio',
             'tab-journal', 'tab-billing', 'tab-preferences', 'tab-admin',
-            'tab-status', 'tab-reports', 'tab-guide', 'tab-briefing', 'tab-broker_bi', 'tab-imbalance'
+            'tab-status', 'tab-reports', 'tab-guide', 'tab-briefing', 'tab-broker_bi'
         ];
         const index = buttons.indexOf(id);
         if (index < 0 || !arguments[index]) return dash_clientside.no_update;
@@ -13313,7 +13315,6 @@ app.clientside_callback(
     Input("tab-guide","n_clicks"),
     Input("tab-briefing","n_clicks"),
     Input("tab-broker_bi","n_clicks"),
-    Input("tab-imbalance","n_clicks"),
     prevent_initial_call=True,
 )
 
@@ -14170,7 +14171,21 @@ def render_main(tab,live,candles,symbol,reports_refresh,weis_refresh,live_mode,t
             return no_update, no_update, no_update, no_update
         try:
             admin_session = session if isinstance(session, dict) else {}
+            if build_imbalance_tab is not None:
+                try:
+                    imbalance_section = build_imbalance_tab(session=admin_session, admin=True)
+                except Exception as e:
+                    imbalance_section = note_box("Imbalance Alerts error: " + str(e), "blue")
+            else:
+                imbalance_section = note_box("Imbalance tab module did not import. Check frontend/imbalance_tab.py.", "blue")
             main = html.Div([
+                # MOVED (2026-11-06): Imbalance Alerts, admin-only while in testing.
+                html.Details([
+                    html.Summary("Imbalance Alerts (testing)", style={"color": WHITE, "fontSize": "15px",
+                                                                      "fontWeight": "900", "cursor": "pointer"}),
+                    html.Div(imbalance_section, style={"marginTop": "12px"}),
+                ], open=True, style={"border": f"1px solid {BORDER}", "borderRadius": "16px", "padding": "16px",
+                                     "background": "rgba(8,24,39,.72)"}),
                 # D3F.1B: developer/audit-only safety verification panel.
                 # Moved here from a global page-wide mount (was showing on
                 # every tab) since this is an internal diagnostic tool, not
@@ -14256,23 +14271,6 @@ def render_main(tab,live,candles,symbol,reports_refresh,weis_refresh,live_mode,t
                 main = card([
                     html.H2("Broker Behavioral Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
                     note_box("Broker tab error: " + str(e), "blue"),
-                ])
-    elif tab=="imbalance":
-        # Fetches the alert log from the backend, so only rebuild on a genuine tab switch.
-        if not tab_switched:
-            return no_update, no_update, no_update, no_update
-        if build_imbalance_tab is None:
-            main = card([
-                html.H2("Imbalance Alerts", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
-                note_box("Imbalance tab module did not import. Check frontend/imbalance_tab.py.", "blue"),
-            ])
-        else:
-            try:
-                main = build_imbalance_tab(session=session, admin=is_admin(session))
-            except Exception as e:
-                main = card([
-                    html.H2("Imbalance Alerts", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
-                    note_box("Imbalance tab error: " + str(e), "blue"),
                 ])
     elif tab=="guide":       main = build_guide_tab()
     elif tab=="briefing":

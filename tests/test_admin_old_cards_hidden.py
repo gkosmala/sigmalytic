@@ -31,10 +31,12 @@ def test_snapshot_writer_card_stays_on_the_main_admin_layout():
     assert len(re.findall(r"^[ ]+snap_block,\n", s, re.M)) == 1
 
 
-def test_imbalance_tab_sits_between_sigma_analysis_and_heat_map():
+def test_imbalance_alerts_live_in_the_admin_tab_only():
     s = _src()
     block = s[s.index("ALL_TABS = ["):s.index("]\n", s.index("ALL_TABS = ["))]
     keys = re.findall(r'^\s+\("(\w+)",', block, re.M)
-    assert keys.index("imbalance") == keys.index("weis") + 1
-    assert keys.index("heatmap") == keys.index("imbalance") + 1
-    assert keys.count("imbalance") == 1
+    assert "imbalance" not in keys                       # no navigation button
+    assert "tab-imbalance" not in s
+    admin = s[s.index('    elif tab=="admin":'):s.index('    elif tab=="reports":')]
+    assert "build_imbalance_tab(session=admin_session, admin=True)" in admin
+    assert 'tab=="imbalance"' not in s

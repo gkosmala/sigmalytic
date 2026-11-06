@@ -1,5 +1,6 @@
 """Imbalance scanner: universe, shadow vs live, cooldown, outcomes, track record, API wiring."""
 import os
+import re
 import sys
 import time
 
@@ -22,6 +23,12 @@ def _bars_fn(mapping):
 
 
 NO_OPT = lambda sym, spot: {"opt": None, "call_volume": None, "put_volume": None}
+# Options flow now has to agree (the premise); these scans supply a bullish chain.
+BULL_OPT = lambda sym, spot: {"opt": {"status": "OK", "spot_price": spot, "net_gamma_regime": "POSITIVE",
+                                      "zero_gamma_level": spot * 0.95,
+                                      "nearest_wall_above": {"distance_to_spot_pct": 0.05},
+                                      "nearest_wall_below": {"distance_to_spot_pct": -0.01}},
+                              "call_volume": 8000, "put_volume": 2000}
 
 
 def test_universe_is_spy_qqq_and_mag_11():
@@ -33,7 +40,7 @@ def test_universe_is_spy_qqq_and_mag_11():
 
 def test_shadow_mode_logs_but_does_not_email():
     store, sent = sc.MemoryLogStore(), []
-    res = sc.run_scan(["AAPL", "MSFT"], _bars_fn({"AAPL": _breakout_up(), "MSFT": _bars(60)}), NO_OPT,
+    res = sc.run_scan(["AAPL", "MSFT"], _bars_fn({"AAPL": _breakout_up(), "MSFT": _bars(60)}), BULL_OPT,
                       store=store, gate=ie.AlertGate(), live=False, send_fn=lambda r, e: sent.append(r) or True)
     assert [f["symbol"] for f in res["fired"]] == ["AAPL"]
     assert sent == [] and len(store.rows) == 1 and store.rows[0]["emailed"] is False
@@ -41,7 +48,7 @@ def test_shadow_mode_logs_but_does_not_email():
 
 def test_live_mode_emails_and_marks_row():
     store, sent = sc.MemoryLogStore(), []
-    sc.run_scan(["AAPL"], _bars_fn({"AAPL": _breakout_up()}), NO_OPT, store=store, gate=ie.AlertGate(),
+    sc.run_scan(["AAPL"], _bars_fn({"AAPL": _breakout_up()}), BULL_OPT, store=store, gate=ie.AlertGate(),
                 live=True, send_fn=lambda r, e: sent.append(r) or True)
     assert len(sent) == 1 and store.rows[0]["emailed"] is True
 
@@ -50,8 +57,8 @@ def test_cooldown_blocks_second_alert():
     store, gate = sc.MemoryLogStore(), ie.AlertGate(3600)
     kw = dict(store=store, gate=gate, live=False)
     data = _bars_fn({"AAPL": _breakout_up()})
-    sc.run_scan(["AAPL"], data, NO_OPT, now=1000.0, **kw)
-    r2 = sc.run_scan(["AAPL"], data, NO_OPT, now=1500.0, **kw)
+    sc.run_scan(["AAPL"], data, BULL_OPT, now=1000.0, **kw)
+    r2 = sc.run_scan(["AAPL"], data, BULL_OPT, now=1500.0, **kw)
     assert r2["fired"] == [] and r2["skipped"][0]["reason"] == "cooldown" and len(store.rows) == 1
 
 
@@ -99,14 +106,14 @@ def test_router_exposes_expected_routes():
     import imbalance_api
     paths = {r.path for r in imbalance_api.imbalance_router.routes}
     assert paths == {"/api/imbalance/universe", "/api/imbalance/log",
-                     "/api/imbalance/track-record", "/api/imbalance/scan"}
+                     "/api/imbalance/track-record", "/api/imbalance/scan", "/api/imbalance/readings"}
 
 
 # ---- admin preview, endpoint auth, tab rendering ---------------------------------
 
 def test_admin_preview_emails_admins_only_when_not_live():
     store, preview, sent = sc.MemoryLogStore(), [], []
-    res = sc.run_scan(["AAPL"], _bars_fn({"AAPL": _breakout_up()}), NO_OPT, store=store, gate=ie.AlertGate(),
+    res = sc.run_scan(["AAPL"], _bars_fn({"AAPL": _breakout_up()}), BULL_OPT, store=store, gate=ie.AlertGate(),
                       live=False, preview=True, send_fn=lambda r, e: sent.append(r) or True,
                       preview_fn=lambda r, e: preview.append(r) or True)
     assert len(preview) == 1 and sent == [] and res["admin_preview"] is True and store.rows[0]["emailed"] is True
@@ -116,10 +123,10 @@ def test_live_overrides_preview_and_no_preview_means_no_email():
     preview, sent = [], []
     kw = dict(gate=ie.AlertGate(), send_fn=lambda r, e: sent.append(r) or True,
               preview_fn=lambda r, e: preview.append(r) or True)
-    sc.run_scan(["AAPL"], _bars_fn({"AAPL": _breakout_up()}), NO_OPT, store=sc.MemoryLogStore(),
+    sc.run_scan(["AAPL"], _bars_fn({"AAPL": _breakout_up()}), BULL_OPT, store=sc.MemoryLogStore(),
                 live=True, preview=True, **kw)
     assert len(sent) == 1 and preview == []
-    sc.run_scan(["MSFT"], _bars_fn({"MSFT": _breakout_up()}), NO_OPT, store=sc.MemoryLogStore(),
+    sc.run_scan(["MSFT"], _bars_fn({"MSFT": _breakout_up()}), BULL_OPT, store=sc.MemoryLogStore(),
                 live=False, preview=False, **kw)
     assert len(sent) == 1 and preview == []
 
@@ -195,14 +202,16 @@ def test_tab_renders_for_admin_and_non_admin(monkeypatch):
     assert "Could not load" in text(tab.build_imbalance_tab({}, admin=True))
 
 
-def test_app_wires_the_imbalance_tab():
+def test_app_wires_imbalance_alerts_into_admin():
     src = open(os.path.join(ROOT, "frontend", "app.py")).read()
-    assert src.count('("imbalance",   "Imbalance Alerts")') == 1
-    assert "'tab-imbalance'" in src and 'Input("tab-imbalance","n_clicks")' in src
-    assert 'elif tab=="imbalance":' in src
+    assert '("imbalance",   "Imbalance Alerts")' not in src and "tab-imbalance" not in src
+    assert "build_imbalance_tab(session=admin_session, admin=True)" in src
     # nav id list and Input list must stay in the same order (index lookup)
-    ids = src[src.index("const buttons = ["):src.index("];", src.index("const buttons = ["))]
-    assert ids.rstrip().endswith("'tab-imbalance'")
+    start = src.index("const buttons = [")
+    ids = re.findall(r"'tab-(\w+)'", src[start:src.index("];", start)])
+    block = src[src.index('Output("s-tab","data"),', start):src.index("prevent_initial_call=True", start)]
+    inputs = re.findall(r'Input\("tab-(\w+)","n_clicks"\)', block)
+    assert ids == inputs
 
 
 def test_imports_the_way_production_does():
@@ -214,3 +223,62 @@ def test_imports_the_way_production_does():
             "assert len(s.UNIVERSE) == 13; print('ok', sorted(r.path for r in a.imbalance_router.routes))")
     out = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True)
     assert out.returncode == 0 and "ok" in out.stdout, out.stderr[-600:]
+
+
+class FakeRedis:
+    def __init__(self):
+        self.d = {}
+
+    def set(self, k, v, nx=False, ex=None):
+        if nx and k in self.d:
+            return False
+        self.d[k] = v
+        return True
+
+    def get(self, k):
+        return self.d.get(k)
+
+
+def test_day_gate_survives_restarts_and_allows_strong_upgrade():
+    r = FakeRedis()
+    now = 1_762_444_800.0                                    # 2025-11-06 16:00 UTC (11:00 ET)
+    assert sc.DayGate(r).allow("QQQ", "SHORT", now, "STANDARD")
+    assert not sc.DayGate(r).allow("QQQ", "SHORT", now + 900, "STANDARD")   # new process, same day
+    assert sc.DayGate(r).allow("QQQ", "SHORT", now + 1800, "STRONG")        # upgrade allowed once
+    assert not sc.DayGate(r).allow("QQQ", "SHORT", now + 2700, "STRONG")
+    assert sc.DayGate(r).allow("QQQ", "LONG", now + 2700, "STANDARD")       # other direction
+    assert sc.DayGate(r).allow("QQQ", "SHORT", now + 86400, "STANDARD")     # next day
+
+
+def test_market_hours_are_eastern_all_year():
+    from datetime import datetime, timezone
+    ts = lambda s: datetime.fromisoformat(s).replace(tzinfo=timezone.utc).timestamp()
+    assert not sc.in_market_hours(ts("2026-11-06T13:00:00"))   # 8:00 ET (EST)
+    assert not sc.in_market_hours(ts("2026-11-06T14:15:00"))   # 9:15 ET
+    assert sc.in_market_hours(ts("2026-11-06T14:30:00"))       # 9:30 ET
+    assert sc.in_market_hours(ts("2026-11-06T21:00:00"))       # 16:00 ET
+    assert not sc.in_market_hours(ts("2026-11-06T21:15:00"))
+    assert sc.in_market_hours(ts("2026-07-06T13:30:00"))       # 9:30 ET (EDT)
+    assert not sc.in_market_hours(ts("2026-11-07T15:00:00"))   # Saturday
+
+
+def test_track_record_counts_each_signal_once():
+    store = sc.MemoryLogStore()
+    for t, sym, d, o in [("2026-11-06T14:30:00+00:00", "QQQ", "SHORT", -1.0),
+                         ("2026-11-06T15:00:00+00:00", "QQQ", "SHORT", -1.0),
+                         ("2026-11-06T16:00:00+00:00", "QQQ", "SHORT", -1.0),
+                         ("2026-11-06T15:00:00+00:00", "MU", "SHORT", 2.0)]:
+        store.add({"alert_id": t + sym, "symbol": sym, "direction": d, "fired_at": t, "outcomes": {"1": o}})
+    tr = sc.track_record(store)
+    assert tr["alerts"] == 4 and tr["signals"] == 2 and tr["by_horizon"]["1"]["n"] == 2
+
+
+def test_scan_saves_pillar_readings_for_every_symbol(monkeypatch):
+    r = FakeRedis()
+    monkeypatch.setattr(sc, "_redis", lambda: r)
+    sc.run_scan(["AAPL", "MSFT"], _bars_fn({"AAPL": _breakout_up(), "MSFT": _bars(60)}), NO_OPT,
+                store=sc.MemoryLogStore(), gate=ie.AlertGate(), live=False)
+    got = {x["symbol"]: x for x in sc.latest_readings(r)}
+    assert set(got) == {"AAPL", "MSFT"}
+    assert got["AAPL"]["blocked"] == "options flow did not agree" and not got["AAPL"]["fired"]
+    assert got["AAPL"]["pillars"]["options_flow"]["available"] is False
