@@ -5031,6 +5031,7 @@ def build_weis_radar_tab(session=None, scan_note=None):
             id="weis-radar-chart", srcDoc="", allow="fullscreen",
             style={"display": "none", "width": "100%", "height": "max(260px, calc(100dvh - 355px))", "border": "none"},
         )),
+        dcc.Store(id="s-weis-radar-chart-scrolled", data=None),
 
         html.Div(_render_weis_radar_table(results), id="weis-radar-table-container"),
     ], style={"padding": "20px"})
@@ -10425,6 +10426,27 @@ render();
 </body>
 </html>
 """
+
+
+# ADDED (2026-11-06): the chart sits below the setup-state and finder tables,
+# so a click near the top of the page opened it out of sight. Scroll the
+# chart title into view whenever a new chart document arrives.
+app.clientside_callback(
+    """
+    function(srcDoc) {
+        if (srcDoc) {
+            setTimeout(function () {
+                var el = document.getElementById('weis-radar-chart-title') || document.getElementById('weis-radar-chart');
+                if (el) { el.scrollIntoView({behavior: 'smooth', block: 'start'}); }
+            }, 150);
+        }
+        return Date.now();
+    }
+    """,
+    Output("s-weis-radar-chart-scrolled", "data"),
+    Input("weis-radar-chart", "srcDoc"),
+    prevent_initial_call=True,
+)
 
 
 @app.callback(
