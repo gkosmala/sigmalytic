@@ -4381,10 +4381,14 @@ def _format_weis_radar_hit(h):
     if h.get("level") is not None:
         details.append(f"level ${float(h['level']):,.2f}")
     if t in ("BREAKOUT", "BREAKDOWN") and h.get("pct_beyond") is not None:
-        held_txt = "HOLDING" if h.get("held") else "not holding"
+        # Every listed crossing has held through the latest close (the detector
+        # only lists symbols still beyond the level), so the useful split is
+        # when it crossed: on the latest bar, or earlier and still holding.
+        days_back = int(h.get("days_back") or 0)
+        status_txt = "NEW TODAY" if days_back == 0 else f"HOLDING {days_back} bar{'s' if days_back != 1 else ''}"
         details.append(f"{h.get('pct_beyond')}% beyond")
-        details.append(f"crossed {h.get('date')} ({h.get('days_back')} bars ago)")
-        details.append(held_txt)
+        details.append(f"crossed {h.get('date')} ({days_back} bars ago)")
+        details.append(status_txt)
     detail_text = f" ({', '.join(details)})" if details else ""
     return html.Span([
         html.Span(t.replace("_", " "), style={"color": color, "fontWeight": "800"}),

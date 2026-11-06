@@ -65,7 +65,19 @@ def test_report_lists_breakouts_and_breakdowns_separately(monkeypatch):
     monkeypatch.setattr(hm, "_load_sector_lookup", lambda: {r["symbol"]: {"sector": "Tech"} for r in rows})
     html_doc = re_.build_report_html("2026-10-23")
     secs = {s["title"]: [x["symbol"] for x in s["symbols"]] for s in re_.symbols_from_report_html(html_doc)}
-    assert secs["Breakouts (26)"][0] == "UPP" and len(secs["Breakouts (26)"]) == 26     # full list, newest first
-    assert secs["Breakdowns (1)"] == ["DWN"]
+    assert "Breakouts: New Today (0)" not in secs                                          # empty sections list no symbols
+    assert secs["Breakouts: Still Holding (26)"][0] == "UPP" and len(secs["Breakouts: Still Holding (26)"]) == 26  # newest first
+    assert secs["Breakdowns: New Today (1)"] == ["DWN"]
+    assert "Breakdowns: Still Holding (0)" not in secs
+    assert "26 breakouts in total" in html_doc and "1 breakdown in total" in html_doc
     assert secs["Observed Springs and Upthrusts (1)"] == ["SPR"]
     assert "Upthrusts and Crossings" not in html_doc
+
+
+def test_daily_bar_not_complete_before_est_close():
+    from datetime import datetime, timezone
+    from backend.radar_service import is_bar_complete
+    bar = "2026-11-05T05:00:00Z"                                     # Alpaca daily bar, EST date
+    assert not is_bar_complete(bar, "1Day", now=datetime(2026, 11, 5, 20, 30, tzinfo=timezone.utc))  # 3:30pm ET
+    assert is_bar_complete(bar, "1Day", now=datetime(2026, 11, 5, 21, 0, tzinfo=timezone.utc))       # 4:00pm ET
+    assert is_bar_complete(bar, "1Day", now=datetime(2026, 11, 6, 1, 0, tzinfo=timezone.utc))
