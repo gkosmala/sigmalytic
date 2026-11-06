@@ -147,6 +147,23 @@ def _normalize_signal_hits(found: list, price: float) -> list:
     return hits
 
 
+def _add_trend_boxes(hits: list, bars: list) -> None:
+    try:
+        from backend.trend_boxes import boxes_for_crossing
+    except Exception:
+        return
+    for h in hits:
+        if h.get("type") not in ("BREAKOUT", "BREAKDOWN"):
+            continue
+        try:
+            tb = boxes_for_crossing(bars, h, date_of=lambda b: str(b["t"]))
+        except Exception:
+            tb = None
+        if tb:
+            h.update(trend=tb["trend_label"], pivots=tb["pivots_label"], trend_phase=tb["phase"],
+                     trend_day=tb["day"], true_crossing_date=tb["crossing_date"])
+
+
 def _dispatch_configured_alerts(results: list, config: dict, redis_client) -> int:
     """Send deduplicated operator alerts for the configured signal subset."""
     if not redis_client or not config.get("alert_signals"):
@@ -476,6 +493,9 @@ def run_weis_radar_scan() -> dict:
                     wyckoff_engine=engine,
                 )
                 hits = _normalize_signal_hits(found, bars[-1]["c"])
+                # ADDED (2026-11-06): stair-step trend boxes on the radar's own
+                # breakout/breakdown rows (same rules as the report and chart).
+                _add_trend_boxes(hits, bars)
                 # ADDED (2026-10-29): daily RSI(14) for every scanned symbol, from the same completed bars --
                 # no extra data request. Read by the AI Sigmalytic Assistant (holdings review, RSI filters).
                 if rsi_enabled:

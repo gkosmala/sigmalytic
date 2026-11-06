@@ -62,3 +62,13 @@ def test_radar_hit_gets_trend_fields(monkeypatch):
     h = next(x for x in hits if x["type"] == "BREAKOUT")
     assert h["trend"].startswith("Trending bullish, step 2") and h["pivots"].startswith("Prior box: R 106.50")
     assert h["trend_day"] == len(df) - 45
+
+
+def test_radar_scan_rows_get_trend_fields():
+    from backend.weis_radar_scan import _add_trend_boxes
+    rows = _rows([100.0] * 20 + UP + BOX1 + LEG2)
+    bars = [{"t": r["date"], "o": r["open"], "h": r["high"], "l": r["low"], "c": r["close"]} for r in rows]
+    hits = [{"type": "BREAKOUT", "level": 100.5, "date": bars[50]["t"]}, {"type": "UPTHRUST", "level": 1}]
+    _add_trend_boxes(hits, bars)
+    assert hits[0]["true_crossing_date"] == bars[45]["t"] and hits[0]["trend"].startswith("Trending bullish, step 2")
+    assert "trend" not in hits[1]

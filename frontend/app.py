@@ -4466,7 +4466,10 @@ def _weis_state_rows(rows_in, sort_dir):
             html.Td(trend),
             html.Td(_strip_book_pages(r.get("reason")) + (f" (flipped from {r['flipped_from']})" if r.get("flipped_from") else ""),
                     style={"color": MUTED}),
-        ], style={"borderBottom": f"1px solid {BORDER}", "color": WHITE}))
+        # ADDED (2026-11-06): click a setup-state row to open the same chart as
+        # a radar result row (show_weis_radar_chart), trend boxes included.
+        ], id={"type": "weis-state-row", "symbol": r.get("symbol")}, n_clicks=0, title="Click to open the chart",
+           style={"borderBottom": f"1px solid {BORDER}", "color": WHITE, "cursor": "pointer"}))
     return rows
 
 
@@ -7137,7 +7140,7 @@ def poll_weis_radar_status(n_intervals, session):
         return f"Scan failed: {payload.get('error', 'unknown error')}", True, no_update
     if n_intervals and n_intervals >= 200:
         return "Lost track of the scan's progress. Check Render logs, or refresh in a few minutes.", True, no_update
-    return f"Scanning... ({n_intervals * 4}s elapsed)", no_update, no_update
+    return f"Scanning... ({(n_intervals or 0) * 4}s elapsed)", no_update, no_update
 
 
 @app.callback(
@@ -10432,6 +10435,7 @@ render();
     Output("weis-radar-chart-title", "children"),
     Output("weis-radar-chart-title", "style"),
     Input({"type": "weis-radar-row", "symbol": ALL}, "n_clicks"),
+    Input({"type": "weis-state-row", "symbol": ALL}, "n_clicks"),
     Input("weis-radar-chart-timeframe", "value"),
     Input("weis-radar-chart-lookback", "value"),
     Input("weis-radar-chart-ma", "value"),
@@ -10439,7 +10443,7 @@ render();
     State("s-weis-radar-current-symbol", "data"),
     prevent_initial_call=True,
 )
-def show_weis_radar_chart(n_clicks_list, timeframe, lookback, ma_period, close_clicks, current_symbol):
+def show_weis_radar_chart(n_clicks_list, state_clicks_list, timeframe, lookback, ma_period, close_clicks, current_symbol):
     """
     Click-to-chart, the Dash-idiomatic substitute for hover (Dash's
     architecture doesn't support passive hover-triggered callbacks the
@@ -10471,6 +10475,10 @@ def show_weis_radar_chart(n_clicks_list, timeframe, lookback, ma_period, close_c
 
     control_ids = {"weis-radar-chart-timeframe", "weis-radar-chart-lookback", "weis-radar-chart-ma"}
     if isinstance(triggered, dict):
+        # Rows re-rendered by a scan refresh or a sort fire with n_clicks 0;
+        # only a real click opens a chart.
+        if not (callback_context.triggered and callback_context.triggered[0].get("value")):
+            return (no_update,) * 6
         symbol = triggered.get("symbol")
     elif triggered in control_ids:
         symbol = current_symbol
