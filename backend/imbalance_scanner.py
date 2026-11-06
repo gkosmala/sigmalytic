@@ -247,6 +247,97 @@ def send_admin_preview(res: Dict[str, Any], entry: float) -> bool:
 
 _GATE = ie.AlertGate()
 
+# ADDED (2026-11-06): the cooldown used to live only in process memory, so every
+# worker restart (each deploy) and every overlapping old/new worker re-fired the
+# same alert. It now lives in Redis: at most one alert per symbol and direction
+# per Eastern trading day, unless a later scan upgrades it to STRONG.
+ET = "America/New_York"
+
+
+def _et_now(now: Optional[float] = None) -> datetime:
+    from zoneinfo import ZoneInfo
+    return datetime.fromtimestamp(time.time() if now is None else now, ZoneInfo(ET))
+
+
+def in_market_hours(now: Optional[float] = None) -> bool:
+    """Weekdays 9:30 a.m. to 4:00 p.m. Eastern, all year (DST-aware)."""
+    t = _et_now(now)
+    if t.weekday() >= 5:
+        return False
+    minutes = t.hour * 60 + t.minute
+    return 9 * 60 + 30 <= minutes <= 16 * 60
+
+
+def _redis() -> Any:
+    try:
+        from backend.radar_service import _redis_client
+    except Exception:
+        try:
+            from radar_service import _redis_client
+        except Exception:
+            return None
+    return _redis_client
+
+
+class DayGate:
+    """One alert per (symbol, direction) per Eastern day, kept in Redis; a STRONG
+    upgrade of a STANDARD alert is still allowed. Falls back to the in-memory
+    cooldown when Redis is unavailable."""
+
+    def __init__(self, redis_client: Any = None, fallback: Optional[ie.AlertGate] = None) -> None:
+        self.r = redis_client
+        self.fallback = fallback or ie.AlertGate()
+
+    def allow(self, symbol: str, direction: str, now: float, tier: Optional[str] = None) -> bool:
+        if not self.r:
+            return self.fallback.allow(symbol, direction, now)
+        key = f"imbalance:alerted:{_et_now(now).date().isoformat()}:{symbol}:{direction}"
+        try:
+            if self.r.set(key, tier or "STANDARD", nx=True, ex=36 * 3600):
+                return True
+            prev = self.r.get(key)
+            prev = prev.decode() if isinstance(prev, bytes) else prev
+            if tier == "STRONG" and prev != "STRONG":
+                self.r.set(key, "STRONG", ex=36 * 3600)
+                return True
+            return False
+        except Exception:
+            return self.fallback.allow(symbol, direction, now)
+
+
+READINGS_KEY = "imbalance:latest_readings"
+
+
+def _reading(sym: str, spot: float, res: Dict[str, Any], at: str) -> Dict[str, Any]:
+    return {"symbol": sym, "at": at, "price": spot, "fired": bool(res.get("fired")),
+            "direction": res.get("direction"), "blocked": res.get("blocked"),
+            "pillars": {k: {"direction": p.get("direction"), "strength": p.get("strength"),
+                            "available": p.get("available"), "evidence": (p.get("evidence") or [""])[0]}
+                        for k, p in (res.get("pillars") or {}).items()}}
+
+
+def save_readings(readings: List[Dict[str, Any]], redis_client: Any = None) -> None:
+    r = redis_client if redis_client is not None else _redis()
+    if not r or not readings:
+        return
+    try:
+        import json
+        r.set(READINGS_KEY, json.dumps(readings), ex=7 * 24 * 3600)
+    except Exception as exc:
+        log.warning("imbalance readings not saved: %s", exc)
+
+
+def latest_readings(redis_client: Any = None) -> List[Dict[str, Any]]:
+    r = redis_client if redis_client is not None else _redis()
+    if not r:
+        return []
+    try:
+        import json
+        raw = r.get(READINGS_KEY)
+        return json.loads(raw) if raw else []
+    except Exception:
+        return []
+
 
 def run_scan(symbols: Optional[List[str]] = None,
              bars_fn: Callable[[List[str]], Dict[str, List[dict]]] = fetch_bars,
@@ -258,13 +349,15 @@ def run_scan(symbols: Optional[List[str]] = None,
              config: Optional[Dict[str, Any]] = None, now: Optional[float] = None) -> Dict[str, Any]:
     symbols = [s.upper() for s in (symbols or UNIVERSE)]
     store = store if store is not None else default_store()
-    gate = gate if gate is not None else _GATE
+    gate = gate if gate is not None else DayGate(_redis(), _GATE)
     live = is_live() if live is None else live
     preview = admin_preview() if preview is None else preview
     now = time.time() if now is None else now
 
     bars_by = bars_fn(symbols)
     fired, skipped, errors = [], [], []
+    readings: List[Dict[str, Any]] = []
+    at = datetime.fromtimestamp(now, timezone.utc).isoformat()
     for sym in symbols:
         bars = bars_by.get(sym) or []
         if len(bars) < ie.MIN_BARS:
@@ -277,9 +370,12 @@ def run_scan(symbols: Optional[List[str]] = None,
         except Exception as exc:
             errors.append({"symbol": sym, "error": str(exc)[:200]})
             continue
+        readings.append(_reading(sym, spot, res, at))
         if not res["fired"]:
             continue
-        if not gate.allow(sym, res["direction"], now):
+        allowed = (gate.allow(sym, res["direction"], now, res.get("tier")) if isinstance(gate, DayGate)
+                   else gate.allow(sym, res["direction"], now))
+        if not allowed:
             skipped.append({"symbol": sym, "reason": "cooldown"})
             continue
         row = {
@@ -302,6 +398,7 @@ def run_scan(symbols: Optional[List[str]] = None,
             row["emailed"] = bool(preview_fn(res, spot))  # admins only
         store.add(row)
         fired.append({"symbol": sym, "direction": res["direction"], "tier": res["tier"], "emailed": row["emailed"]})
+    save_readings(readings)
     return {"live": live, "admin_preview": bool(preview and not live), "scanned": len(symbols), "fired": fired, "skipped": skipped, "errors": errors}
 
 
@@ -337,7 +434,19 @@ def track_record(store: Any = None) -> Dict[str, Any]:
     """Hit rate and average move per horizon over all logged alerts."""
     store = store if store is not None else default_store()
     rows = store.recent(5000)
-    out: Dict[str, Any] = {"alerts": len(rows), "by_horizon": {}}
+    # Score each signal once: the first alert per symbol, direction and Eastern
+    # day. Repeats of the same call (from restarts or rescans) would otherwise
+    # count one decision many times.
+    first: Dict[Any, Dict[str, Any]] = {}
+    for r in sorted(rows, key=lambda r: str(r.get("fired_at") or "")):
+        try:
+            day = _et_now(datetime.fromisoformat(str(r["fired_at"]).replace("Z", "+00:00")).timestamp()).date()
+        except Exception:
+            day = str(r.get("fired_at") or "")[:10]
+        first.setdefault((r.get("symbol"), r.get("direction"), str(day)), r)
+    signals = list(first.values())
+    out: Dict[str, Any] = {"alerts": len(rows), "signals": len(signals), "by_horizon": {}}
+    rows = signals
     for h in OUTCOME_HORIZONS:
         vals = [float(r["outcomes"][str(h)]) for r in rows if (r.get("outcomes") or {}).get(str(h)) is not None]
         if vals:

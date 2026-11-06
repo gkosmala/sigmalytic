@@ -32,6 +32,12 @@ LONG, SHORT, NEUTRAL = "LONG", "SHORT", "NEUTRAL"
 DEFAULTS = {
     "min_agree": 2,
     "min_pillar_strength": 55.0,
+    # ADDED (2026-11-06): options flow must be one of the agreeing pillars. The
+    # premise is positioning and price action agreeing; price + volume alone
+    # is not an imbalance. Its floor is kept separate so it can be calibrated
+    # from the live pillar readings without moving the other two.
+    "require_options": True,
+    "options_min_strength": 55.0,
     "cooldown_bars": 5,
 }
 
@@ -260,8 +266,9 @@ def evaluate(symbol: str, bars: Sequence[Dict[str, Any]], opt: Optional[Dict[str
         "volume_flow": volume_pillar(bars),
     }
     floor = float(cfg["min_pillar_strength"])
+    floors = {k: (float(cfg["options_min_strength"]) if k == "options_flow" else floor) for k in pillars}
     votes = {k: p["direction"] for k, p in pillars.items()
-             if p["available"] and p["direction"] != NEUTRAL and p["strength"] >= floor}
+             if p["available"] and p["direction"] != NEUTRAL and p["strength"] >= floors[k]}
 
     longs = [k for k, d in votes.items() if d == LONG]
     shorts = [k for k, d in votes.items() if d == SHORT]
@@ -273,6 +280,10 @@ def evaluate(symbol: str, bars: Sequence[Dict[str, Any]], opt: Optional[Dict[str
     elif shorts and not longs and len(shorts) >= min_agree:
         direction, agreeing = SHORT, shorts
 
+    blocked = None
+    if direction != NEUTRAL and cfg.get("require_options") and "options_flow" not in agreeing:
+        blocked = "options flow did not agree"
+        direction, agreeing = NEUTRAL, []
     fired = direction != NEUTRAL
     tier = None
     if fired:
@@ -290,6 +301,7 @@ def evaluate(symbol: str, bars: Sequence[Dict[str, Any]], opt: Optional[Dict[str
         "pillars": pillars,
         "guardrail": behavior_guardrail(behavior),
         "min_agree": min_agree,
+        "blocked": blocked,
     }
 
 
@@ -303,6 +315,7 @@ def replay_bars(bars: Sequence[Dict[str, Any]], config: Optional[Dict[str, Any]]
     """
     cfg = {**DEFAULTS, **(config or {})}
     cfg["min_agree"] = min(int(cfg["min_agree"]), 2)
+    cfg["require_options"] = False  # no historical options data: replay scores price + volume only
     cooldown = int(cfg["cooldown_bars"])
     alerts: List[Dict[str, Any]] = []
     next_ok = 0

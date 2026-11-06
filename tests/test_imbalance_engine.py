@@ -63,9 +63,29 @@ def test_options_bull_with_call_skew():
     assert p["direction"] == ie.LONG and p["strength"] > 55
 
 
-def test_two_of_three_fires_without_options():
+def test_price_and_volume_alone_do_not_fire_when_options_required():
     r = ie.evaluate("X", _breakout_up())
+    assert not r["fired"] and r["blocked"] == "options flow did not agree"
+
+
+def test_two_of_three_fires_without_options_when_not_required():
+    r = ie.evaluate("X", _breakout_up(), config={"require_options": False})
     assert r["fired"] and r["direction"] == ie.LONG and r["tier"] == "STANDARD" and r["pillars_agreeing"] == 2
+
+
+def test_options_plus_one_pillar_fires():
+    flat = _bars(60)                                     # no price/volume conviction
+    r = ie.evaluate("X", _breakout_up(), OPT_BULL, 8000, 2000, config={"min_pillar_strength": 101})
+    assert not r["fired"]                                # only options votes: 1 of 3
+    r = ie.evaluate("X", _breakout_up(), OPT_BULL, 8000, 2000)
+    assert r["fired"] and "options_flow" in r["agreeing"]
+    assert not ie.evaluate("X", flat, OPT_BULL, 8000, 2000)["fired"]
+
+
+def test_options_floor_is_separate():
+    weak = ie.evaluate("X", _breakout_up(), OPT_BULL, 5500, 4500)          # options strength ~30
+    assert not weak["fired"]
+    assert ie.evaluate("X", _breakout_up(), OPT_BULL, 5500, 4500, config={"options_min_strength": 25})["fired"]
 
 
 def test_three_of_three_is_strong():
@@ -90,8 +110,8 @@ def test_quiet_market_no_alert():
 
 
 def test_guardrail_adds_notes_but_never_changes_direction():
-    base = ie.evaluate("X", _breakout_up())
-    warned = ie.evaluate("X", _breakout_up(), behavior={"losing_streak": 4, "trades_today": 9})
+    base = ie.evaluate("X", _breakout_up(), OPT_BULL, 8000, 2000)
+    warned = ie.evaluate("X", _breakout_up(), OPT_BULL, 8000, 2000, behavior={"losing_streak": 4, "trades_today": 9})
     assert warned["guardrail"]["caution"] and len(warned["guardrail"]["notes"]) == 2
     assert warned["direction"] == base["direction"] and warned["fired"] == base["fired"]
     assert ie.behavior_guardrail(None) == {"caution": False, "notes": []}

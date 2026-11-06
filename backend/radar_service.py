@@ -2641,6 +2641,11 @@ def start_radar_scheduler():
             import imbalance_scanner as _imb
         if _imb.scan_enabled():
             def _imbalance_job():
+                # FIX (2026-11-06): market hours in Eastern time all year. The old
+                # 13:00-20:45 UTC window became 8:00 a.m.-3:45 p.m. ET once DST
+                # ended, scanning before the open on yesterday's close.
+                if not _imb.in_market_hours():
+                    return
                 try:
                     _imb.run_scan()
                     _imb.update_outcomes()
@@ -2650,8 +2655,9 @@ def start_radar_scheduler():
                 _imbalance_job,
                 trigger="cron",
                 day_of_week="mon-fri",
-                hour="13-20",
+                hour="9-16",
                 minute="*/15",
+                timezone="America/New_York",
                 id="imbalance_scan",
             )
             log.info("Imbalance Alert scan scheduled (live=%s)", _imb.is_live())

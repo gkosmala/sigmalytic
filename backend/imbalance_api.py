@@ -5,6 +5,7 @@ backend/imbalance_api.py
     GET  /api/imbalance/universe     symbols scanned and current mode
     GET  /api/imbalance/log          recent alerts (admin only while in testing)
     GET  /api/imbalance/track-record hit rate / average move per horizon (admin only)
+    GET  /api/imbalance/readings     latest per-symbol pillar readings (admin only)
     POST /api/imbalance/scan         run one scan now (admin only)
 """
 from __future__ import annotations
@@ -49,6 +50,12 @@ def log_rows(limit: int = 50, _admin_email: str = Depends(_admin)):
 @imbalance_router.get("/track-record")
 def track_record(_admin_email: str = Depends(_admin)):
     return sc.track_record()
+
+
+@imbalance_router.get("/readings")
+def readings(_admin_email: str = Depends(_admin)):
+    """Each symbol's options, price and volume pillar reading from the latest scan."""
+    return {"readings": sc.latest_readings()}
 
 
 @imbalance_router.post("/scan")
