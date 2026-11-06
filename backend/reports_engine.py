@@ -27,6 +27,11 @@ REPORT_SUBTITLE = "Daily market opportunities and sector movement"
 COPYRIGHT = "Copyright © 2026 Sigmalytic Quant Corporation. All rights reserved. Confidential and proprietary."
 
 REDIS_REPORT_INDEX_KEY = "reports:index"       # set of available dates
+# The report's own breakout/breakdown lifecycle, kept apart from the Weis Radar
+# screen's state so radar settings (timeframe, signals, manual scans) never
+# change what the dated report says. Same engine: backend.weis_radar_lifecycle.
+REPORT_LIFECYCLE_KEY = "report:lifecycle:v1"
+CROSSING_SIGNALS = ("BREAKOUT", "BREAKDOWN")
 
 
 # ── Shared helpers (same logic as tools/generate_nightly_intelligence_report_v2.py) ──
@@ -405,8 +410,16 @@ def _run_full_universe_renko_weis_scan() -> List[Dict[str, Any]]:
         raise ValueError("Sector reference universe is unavailable")
     bars_map = fetch_bars_batch(universe, timeframe="1Day", limit=252, adjustment="all")
 
+    from backend.radar_service import _redis_client
+    from backend.weis_radar_lifecycle import WeisRadarLifecycleTracker
+
     engine = RenkoWeisWaveEngine()
     wyckoff = WyckoffVerdictEngine()
+    # Fixed report profile: daily completed bars, breakouts and breakdowns
+    # always detected, tracked with the Weis Radar lifecycle engine.
+    tracker = WeisRadarLifecycleTracker(_redis_client, "1Day",
+                                        scan_id=datetime.now(timezone.utc).isoformat(),
+                                        state_key=REPORT_LIFECYCLE_KEY)
     results: List[Dict[str, Any]] = []
     for sym, bars in bars_map.items():
         bars = trim_incomplete_bar(bars, "1Day")
@@ -433,10 +446,13 @@ def _run_full_universe_renko_weis_scan() -> List[Dict[str, Any]]:
                           rel_volume=(volume / (sum(trailing) / 20)
                                       if volume is not None and len(trailing) == 20
                                       and all(v is not None for v in trailing) and sum(trailing) > 0 else None))
+            crossing_hits = []
             if len(bars) >= 65:
                 df = _bars_to_dataframe(bars)
+                all_hits = scan_symbol_for_weis_patterns(wyckoff, df)
+                crossing_hits = [hit for hit in all_hits if hit.get("type") in CROSSING_SIGNALS]
                 result["events"] = [
-                    hit for hit in scan_symbol_for_weis_patterns(wyckoff, df)
+                    hit for hit in all_hits
                     if hit.get("type") in ("SPRING", "UPTHRUST")
                     or (hit.get("type") in ("BREAKOUT", "BREAKDOWN")
                         and hit.get("days_back", 999) <= 3)
@@ -475,10 +491,83 @@ def _run_full_universe_renko_weis_scan() -> List[Dict[str, Any]]:
                         "current_progress": round(time_waves[-1].price_range, 4),
                         "prior_progress": round(time_waves[-2].price_range, 4),
                     }
+            # Open breakouts/breakdowns are evaluated on every symbol's new
+            # bars even when no new crossing is detected today.
+            try:
+                tracker.process_symbol(sym, bars, crossing_hits)
+            except Exception:
+                pass
             results.append(result)
         except Exception:
             continue
+    try:
+        tracker.save()
+    except Exception:
+        pass
+    by_symbol: Dict[str, List[Dict[str, Any]]] = {}
+    for event in tracker.events.values():
+        if isinstance(event, dict) and event.get("signal_type") in CROSSING_SIGNALS:
+            by_symbol.setdefault(event.get("symbol"), []).append(event)
+    for result in results:
+        result["lifecycle"] = _report_lifecycle_events(by_symbol.get(result.get("symbol"), []),
+                                                       result.get("last_bar_date"))
     return results
+
+
+def _event_market_date(bar_time: Any) -> Optional[str]:
+    return _bar_market_date({"t": bar_time}) if bar_time else None
+
+
+def _report_lifecycle_events(events: List[Dict[str, Any]], report_date: Optional[str]) -> List[Dict[str, Any]]:
+    """Breakout/breakdown events worth showing on this date: everything still
+    open (no time limit) plus anything that failed on this date."""
+    shown = []
+    for event in events:
+        stage = event.get("stage")
+        failed_today = stage == "INVALIDATED" and _event_market_date(event.get("terminal_bar_time")) == report_date
+        if stage in ("TRIGGERED", "CONFIRMED") or failed_today:
+            shown.append(event)
+    return shown
+
+
+def _lifecycle_sections(rows: List[Dict[str, Any]], report_date: str, signal: str) -> Dict[str, List[Dict[str, Any]]]:
+    """New Today / Confirmed / Holding / Failed Today items for one signal type."""
+    out: Dict[str, List[Dict[str, Any]]] = {"new": [], "confirmed": [], "holding": [], "failed": []}
+    for row in rows:
+        for event in row.get("lifecycle") or []:
+            if event.get("signal_type") != signal:
+                continue
+            stage = event.get("stage")
+            crossed = _event_market_date(event.get("trigger_bar_time")) or "?"
+            sessions = int(event.get("bars_observed_after_trigger") or 0)
+            bullish = event.get("direction") == "Bullish"
+            parts = [f"{event.get('direction')}",
+                     f"attempt {int(event.get('attempt') or 1)}",
+                     f"level {_fmt(event.get('structure_level'), 2)}",
+                     f"crossed {crossed}" + (f" ({sessions} session{'s' if sessions != 1 else ''} ago)" if sessions else "")]
+            if event.get("pct_since_trigger") is not None and sessions:
+                sign = 1 if bullish else -1   # stored in the break's direction; shown as the price move
+                parts.append(f"price {sign * float(event['pct_since_trigger']):+.2f}% since crossing close"
+                             f" (best {sign * float(event.get('best_pct_since_trigger') or 0):+.2f}%)")
+            if event.get("confirmed_bar_time"):
+                parts.append(f"confirmed {_event_market_date(event['confirmed_bar_time'])}")
+            if stage == "INVALIDATED":
+                side = "below" if bullish else "above"
+                parts.append(f"closed {_fmt(event.get('terminal_price'), 2)}, back {side} the level"
+                             + (" after confirmation" if event.get("failed_after_confirmation") else " before confirming"))
+                bucket = "failed"
+            elif crossed == report_date:
+                parts.append(f"confirms on a later close {'above' if bullish else 'below'} {_fmt(event.get('confirmation_level'), 2)}")
+                bucket = "new"
+            elif stage == "CONFIRMED":
+                bucket = "confirmed"
+            else:
+                parts.append(f"not yet confirmed (needs a close {'above' if bullish else 'below'} {_fmt(event.get('confirmation_level'), 2)})")
+                bucket = "holding"
+            out[bucket].append(dict(symbol=row.get("symbol", ""), price=row.get("price"), date=report_date,
+                                    label=("Bullish breakout" if bullish else "Bearish breakdown"),
+                                    evidence="; ".join(parts), priority=sessions))
+    return out
 
 
 def _weis_verdict_table_html(rows: List[Dict[str, Any]], title: str, note: str = "", limit: int = 25, bearish: bool = False) -> str:
@@ -607,6 +696,48 @@ def _sector_heatmap_html(rows: List[Dict[str, Any]]) -> str:
     </section>"""
 
 
+def _crossing_window_html(breakouts, breakouts_new, breakouts_holding,
+                          breakdowns, breakdowns_new, breakdowns_holding, report_date: str) -> str:
+    """Breakout/breakdown lists from the crossing window alone (no lifecycle)."""
+    def total(items, word):
+        return f"{len(items)} {word}{'s' if len(items) != 1 else ''} in total"
+    return (
+        _opportunity_table(breakouts_new, "Breakouts: New Today", f"Closed above a multi-touch resistance level for the first time on {report_date}. {total(breakouts, 'breakout')}; the rest are listed under Still Holding. An observed crossing, not a forecast.", BREAKOUT_LIST_LIMIT)
+        + _opportunity_table(breakouts_holding, "Breakouts: Still Holding", "Crossed above a multi-touch resistance level on one of the three sessions before the report date and has closed above it every session since. Sorted most recent crossing first. An observed crossing, not a forecast.", BREAKOUT_LIST_LIMIT)
+        + _opportunity_table(breakdowns_new, "Breakdowns: New Today", f"Closed below a multi-touch support level for the first time on {report_date}. {total(breakdowns, 'breakdown')}; the rest are listed under Still Holding. An observed crossing, not a forecast.", BREAKOUT_LIST_LIMIT)
+        + _opportunity_table(breakdowns_holding, "Breakdowns: Still Holding", "Crossed below a multi-touch support level on one of the three sessions before the report date and has closed below it every session since. Sorted most recent crossing first. An observed crossing, not a forecast.", BREAKOUT_LIST_LIMIT)
+    )
+
+
+def _lifecycle_sections_html(rows: List[Dict[str, Any]], report_date: str) -> str:
+    """Breakouts and breakdowns followed from the crossing bar with the Weis
+    Radar lifecycle engine, with no time limit: new, confirmed and still
+    holding, holding but not yet confirmed, and failed on this date."""
+    html_parts = []
+    for signal, plural, side, level_word in (("BREAKOUT", "Breakouts", "above", "resistance"),
+                                             ("BREAKDOWN", "Breakdowns", "below", "support")):
+        back = "below" if side == "above" else "above"
+        sec = _lifecycle_sections(rows, report_date, signal)
+        active = len(sec["new"]) + len(sec["confirmed"]) + len(sec["holding"])
+        html_parts += [
+            _opportunity_table(sec["new"], f"{plural}: New Today",
+                               f"Closed {side} a multi-touch {level_word} level on {report_date}. "
+                               f"{active} {plural.lower()[:-1] + ' is' if active == 1 else plural.lower() + ' are'} active in total, followed until a close back {back} the level. "
+                               "An observed crossing, not a forecast.", BREAKOUT_LIST_LIMIT),
+            _opportunity_table(sec["confirmed"], f"{plural}: Confirmed and Holding",
+                               f"Followed through: a later close went beyond the crossing day's {'high' if side == 'above' else 'low'}, "
+                               f"and every close since has stayed {side} the level. Watched with no time limit. "
+                               "Sorted most recent crossing first.", BREAKOUT_LIST_LIMIT),
+            _opportunity_table(sec["holding"], f"{plural}: Holding, Not Yet Confirmed",
+                               f"Still closing {side} the level but no close beyond the crossing day's {'high' if side == 'above' else 'low'} yet "
+                               "(moving sideways). Watched with no time limit.", BREAKOUT_LIST_LIMIT),
+            _opportunity_table(sec["failed"], f"{plural}: Failed Today",
+                               f"Closed back {back} the broken level on {report_date}, ending this attempt. "
+                               "A later crossing of the same level is tracked as a new, numbered attempt.", BREAKOUT_LIST_LIMIT),
+        ]
+    return "".join(html_parts)
+
+
 def build_report_html(report_date_str: str) -> str:
     """One dated daily-bar snapshot; fail rather than mislabel cached or old bars."""
     from backend.heatmap_engine import _load_sector_lookup
@@ -683,6 +814,11 @@ def build_report_html(report_date_str: str) -> str:
     breakouts_holding = [i for i in breakouts if i.get("priority", 0) > 0]
     breakdowns_new = [i for i in breakdowns if i.get("priority", 0) == 0]
     breakdowns_holding = [i for i in breakdowns if i.get("priority", 0) > 0]
+    if any("lifecycle" in row for row in rows):
+        crossing_html = _lifecycle_sections_html(rows, report_date)
+    else:  # scan output without lifecycle tracking (older data): crossing-window lists
+        crossing_html = _crossing_window_html(breakouts, breakouts_new, breakouts_holding,
+                                              breakdowns, breakdowns_new, breakdowns_holding, report_date)
     reversals = [i for i in confirmed if i["label"] not in ("Breakout", "Breakdown")]
     movers_html = _movers_table(_market_movers_from_scanned_rows(rows))
     html_doc = f"""<!doctype html>
@@ -721,10 +857,7 @@ def build_report_html(report_date_str: str) -> str:
     </section>
     {_sector_heatmap_html(rows)}
     {_opportunity_table(setups, "Setting Up: Near Tested Levels", "Close is within 2% of a multi-touch support or resistance level without a confirmed crossing. A watch condition, not a trade trigger.", 15)}
-    {_opportunity_table(breakouts_new, "Breakouts: New Today", f"Closed above a multi-touch resistance level for the first time on {report_date}. {len(breakouts)} breakout{'s' if len(breakouts) != 1 else ''} in total; the rest are listed under Still Holding. An observed crossing, not a forecast.", BREAKOUT_LIST_LIMIT)}
-    {_opportunity_table(breakouts_holding, "Breakouts: Still Holding", "Crossed above a multi-touch resistance level on one of the three sessions before the report date and has closed above it every session since. Sorted most recent crossing first. An observed crossing, not a forecast.", BREAKOUT_LIST_LIMIT)}
-    {_opportunity_table(breakdowns_new, "Breakdowns: New Today", f"Closed below a multi-touch support level for the first time on {report_date}. {len(breakdowns)} breakdown{'s' if len(breakdowns) != 1 else ''} in total; the rest are listed under Still Holding. An observed crossing, not a forecast.", BREAKOUT_LIST_LIMIT)}
-    {_opportunity_table(breakdowns_holding, "Breakdowns: Still Holding", "Crossed below a multi-touch support level on one of the three sessions before the report date and has closed below it every session since. Sorted most recent crossing first. An observed crossing, not a forecast.", BREAKOUT_LIST_LIMIT)}
+    {crossing_html}
     {_opportunity_table(reversals, "Observed Springs and Upthrusts", "Detector rules met on completed daily bars: a spring dips below support and recovers; an upthrust pushes above resistance and fails. This does not validate subsequent performance.", 20)}
     {_opportunity_table(exhaustion, "Buying and Selling Exhaustion", "Renko-Weis screening rule: shrinking volume on comparable waves after three progressively shorter thrusts. Approximate volume is apportioned across Renko bricks.", 15)}
     {_opportunity_table(climaxes, "Buying and Selling Climaxes", "Existing daily time-bar Weis Radar rule: current wave volume > 2x previous wave, while its price progress < half the previous wave. Rules describe observed volume and price, not a future move.", 15)}
