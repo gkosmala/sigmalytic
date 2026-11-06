@@ -229,11 +229,31 @@ def _crossing_bar(bars: list, hit: dict) -> Optional[dict]:
     date = str((hit or {}).get("date") or "").strip()
     if not date:
         return None
-    for bar in reversed(bars or []):
-        t = _bar_time(bar)
+    bars = bars or []
+    for j in range(len(bars) - 1, -1, -1):
+        t = _bar_time(bars[j])
         if t == date or (len(date) == 10 and t[:10] == date):
-            return bar
+            return bars[_walk_back_to_true_crossing(bars, j, hit)]
     return None
+
+
+def _walk_back_to_true_crossing(bars: list, j: int, hit: dict) -> int:
+    """The detector only looks back 20 bars, so a stock that has been beyond the
+    level longer is reported as crossing exactly 20 bars ago. Walk back through
+    earlier closes still beyond the level (same 0.1% rule as the detector) to the
+    real crossing bar."""
+    level = _float((hit or {}).get("level"))
+    signal = _signal_type(hit)
+    if not level or signal not in WATCH_UNTIL_FAIL_SIGNALS:
+        return j
+    def beyond(bar):
+        c = _float(bar.get("c"))
+        if c is None:
+            return False
+        return c > level * 1.001 if signal == "BREAKOUT" else c < level * 0.999
+    while j > 0 and beyond(bars[j - 1]):
+        j -= 1
+    return j
 
 
 class WeisRadarLifecycleTracker:

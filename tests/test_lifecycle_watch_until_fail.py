@@ -129,10 +129,10 @@ def test_other_signals_unchanged_confirmed_is_final():
 
 def test_separate_state_key():
     r = FakeRedis()
-    t = WeisRadarLifecycleTracker(r, "1Day", scan_id="s1", state_key="report:lifecycle:v1")
+    t = WeisRadarLifecycleTracker(r, "1Day", scan_id="s1", state_key="report:lifecycle:v2")
     t.process_symbol("ABC", [bar(1, 98, 99, 97, 98), bar(2, 99, 102, 99, 101)], [breakout_hit(2)])
     t.save()
-    assert get_lifecycle_snapshot(r, "report:lifecycle:v1")["events"]
+    assert get_lifecycle_snapshot(r, "report:lifecycle:v2")["events"]
     assert not get_lifecycle_snapshot(r)["events"]
 
 
@@ -280,3 +280,13 @@ def test_stair_step_boxes_bearish_mirror():
     st = re_._trend_boxes(_mk(mirrored), 25, False)
     assert st["phase"] == "trending" and st["step"] == 2
     assert re_._pivot_label(st, False) == "Prior box: R 195.50 / S 193.50"
+
+
+def test_crossing_older_than_detector_lookback_uses_true_date():
+    r = FakeRedis()
+    bars = [bar(1, 98, 99, 97, 98), bar(2, 99, 102, 99, 101), bar(5, 101, 103, 100.5, 102),
+            bar(6, 102, 103, 101, 102.5), bar(7, 102, 103, 101, 102)]
+    t = WeisRadarLifecycleTracker(r, "1Day", scan_id="s1")
+    t.process_symbol("OLD", bars, [{**breakout_hit(6), "days_back": 20}])   # detector capped at the 6th
+    e = only_event(t)
+    assert e["trigger_bar_time"].startswith("2026-10-02")                   # real crossing

@@ -30,7 +30,9 @@ REDIS_REPORT_INDEX_KEY = "reports:index"       # set of available dates
 # The report's own breakout/breakdown lifecycle, kept apart from the Weis Radar
 # screen's state so radar settings (timeframe, signals, manual scans) never
 # change what the dated report says. Same engine: backend.weis_radar_lifecycle.
-REPORT_LIFECYCLE_KEY = "report:lifecycle:v1"
+# v2 (2026-11-06): rebuilt once because v1 stored crossings older than the
+# detector's 20-bar lookback as crossing exactly 20 bars ago.
+REPORT_LIFECYCLE_KEY = "report:lifecycle:v2"
 CROSSING_SIGNALS = ("BREAKOUT", "BREAKDOWN")
 
 
