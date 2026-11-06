@@ -479,9 +479,12 @@ def is_bar_complete(bar_timestamp_str: str, timeframe: str, now=None) -> bool:
         if now.date() > bar_start.date():
             return True
         if now.date() == bar_start.date():
-            # Conservative: 8pm UTC covers both EDT (4pm=20:00 UTC) and
-            # EST (4pm=21:00 UTC) market closes without needing DST logic.
-            return now.hour >= 20
+            # Conservative: 9pm UTC is at or after the 4pm ET close in both
+            # EDT (20:00 UTC) and EST (21:00 UTC), without needing DST logic.
+            # FIX (2026-11-06): this was 20, which is before the EST close, so
+            # from November to March a still-forming daily bar counted as
+            # complete between 3pm and 4pm ET.
+            return now.hour >= 21
         return False
 
     if timeframe == "1Week":
