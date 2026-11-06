@@ -165,8 +165,38 @@ def test_report_sections_from_lifecycle(monkeypatch):
     assert secs["Breakouts: Confirmed and Holding (1)"] == ["CONF"]
     assert secs["Breakouts: Holding, Not Yet Confirmed (1)"] == ["SIDE"]
     assert secs["Breakouts: Failed Today (1)"] == ["FAIL"]
-    assert "3 breakouts are active in total" in html_doc
-    assert "after confirmation" in html_doc and "Bullish" in html_doc
+    assert "Breakouts and Breakdowns: Summary" in html_doc
+    assert "Failed after confirmation" in html_doc and "Bullish (long)" in html_doc
+    assert "Needs a close above 102.00 to confirm" in html_doc
+
+
+def test_failed_earlier_stays_on_watch_until_new_attempt(monkeypatch):
+    from backend import reports_engine as re_
+    r = FakeRedis()
+    t = WeisRadarLifecycleTracker(r, "1Day", scan_id="s1", state_key=re_.REPORT_LIFECYCLE_KEY)
+    bars = [bar(1, 98, 99, 97, 98), bar(2, 99, 102, 99, 101), bar(5, 100, 100, 98, 99), bar(9, 99, 99.5, 98, 99)]
+    t.process_symbol("RTY", bars, [breakout_hit(2)])                    # failed on the 5th
+    events = list(t.events.values())
+    shown = re_._report_lifecycle_events(events, "2026-10-09")
+    rows = [{"symbol": "RTY", "price": 99.0, "change_pct": 0.0, "lifecycle": shown}]
+    sec = re_._lifecycle_sections(rows, "2026-10-09", "BREAKOUT")
+    assert [i["symbol"] for i in sec["retry"]] == ["RTY"] and "watching for attempt 2" in sec["retry"][0]["status"]
+
+    bars += [bar(12, 99, 101, 99, 100.8)]                                # second attempt
+    t.process_symbol("RTY", bars, [breakout_hit(12, level=100.2)])
+    shown = re_._report_lifecycle_events(list(t.events.values()), "2026-10-12")
+    rows = [{"symbol": "RTY", "price": 100.8, "change_pct": 1.8, "lifecycle": shown}]
+    sec = re_._lifecycle_sections(rows, "2026-10-12", "BREAKOUT")
+    assert sec["retry"] == [] and [i["attempt"] for i in sec["new"]] == [2]
+
+
+def test_four_hour_alignment():
+    from backend import reports_engine as re_
+    up = [{"c": 100 + i * 0.1} for i in range(25)]
+    assert re_._four_hour_alignment(up, 101.0, True) == "Aligned"
+    assert re_._four_hour_alignment(up, 110.0, True) == "Mixed"
+    assert re_._four_hour_alignment(up, 101.0, False) == "Against"
+    assert re_._four_hour_alignment(up[:5], 101.0, True) == "n/a"
 
 
 def test_adopts_open_event_recorded_before_crossing_bar_ids():

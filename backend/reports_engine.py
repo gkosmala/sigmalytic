@@ -245,6 +245,9 @@ h2 { font-size: 21px; margin: 24px 0 10px 0; border-bottom: 1px solid #d1d5db; p
 .muted { color: #6b7280; }
 table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 11px; margin-top: 10px; }
 th { background: #111827; color: white; text-align: left; padding: 7px; }
+table.crossing { font-size: 9.5px; }
+table.crossing th { padding: 5px 4px; }
+table.crossing td { padding: 4px; }
 td { border-bottom: 1px solid #e5e7eb; padding: 6px; vertical-align: top; word-wrap: break-word; overflow-wrap: break-word; }
 .num { text-align: center; }
 .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
@@ -421,8 +424,10 @@ def _run_full_universe_renko_weis_scan() -> List[Dict[str, Any]]:
                                         scan_id=datetime.now(timezone.utc).isoformat(),
                                         state_key=REPORT_LIFECYCLE_KEY)
     results: List[Dict[str, Any]] = []
+    daily_bars: Dict[str, List[Dict[str, Any]]] = {}
     for sym, bars in bars_map.items():
         bars = trim_incomplete_bar(bars, "1Day")
+        daily_bars[sym] = bars
         if not bars or len(bars) < 20:
             continue
         try:
@@ -511,7 +516,78 @@ def _run_full_universe_renko_weis_scan() -> List[Dict[str, Any]]:
     for result in results:
         result["lifecycle"] = _report_lifecycle_events(by_symbol.get(result.get("symbol"), []),
                                                        result.get("last_bar_date"))
+    _enrich_crossing_rows(results, daily_bars, fetch_bars_batch, trim_incomplete_bar)
     return results
+
+
+def _daily_change_by_date(bars: List[Dict[str, Any]]) -> Dict[str, float]:
+    out: Dict[str, float] = {}
+    for prev, cur in zip(bars, bars[1:]):
+        p, c, d = _safe_float(prev.get("c")), _safe_float(cur.get("c")), _bar_market_date(cur)
+        if p and c is not None and d:
+            out[d] = (c / p - 1) * 100
+    return out
+
+
+def _four_hour_alignment(bars: List[Dict[str, Any]], level: Optional[float], bullish: bool) -> str:
+    """Whether the 4-hour chart agrees with the daily break: the latest completed
+    4-hour close is beyond the level, and above (bullish) / below (bearish) its
+    20-bar average. Both agree = Aligned, both disagree = Against, else Mixed."""
+    closes = [c for c in (_safe_float(b.get("c")) for b in bars or []) if c is not None]
+    if len(closes) < 20 or not level:
+        return "n/a"
+    last, avg = closes[-1], sum(closes[-20:]) / 20
+    beyond = last > level if bullish else last < level
+    trend = last > avg if bullish else last < avg
+    return "Aligned" if beyond and trend else "Against" if not beyond and not trend else "Mixed"
+
+
+def _enrich_crossing_rows(results, daily_bars, fetch_bars_batch, trim_incomplete_bar) -> None:
+    """Context the breakout/breakdown sections show for every entry: sector, the
+    S&P 500 (SPY) move, relative strength against it, crossing-day relative
+    volume, and 4-hour alignment. Each piece is optional: a failed lookup shows
+    as n/a rather than stopping the report."""
+    from backend.heatmap_engine import _load_sector_lookup
+    lookup = _load_sector_lookup()
+    spy_change: Dict[str, float] = {}
+    try:
+        spy = fetch_bars_batch(["SPY"], timeframe="1Day", limit=252, adjustment="all").get("SPY") or []
+        spy_change = _daily_change_by_date(trim_incomplete_bar(spy, "1Day"))
+    except Exception:
+        spy_change = {}
+
+    tracked = [r for r in results if r.get("lifecycle")]
+    four_hour: Dict[str, List[Dict[str, Any]]] = {}
+    try:
+        if tracked:
+            raw = fetch_bars_batch([r["symbol"] for r in tracked], timeframe="4Hour", limit=60)
+            four_hour = {sym: trim_incomplete_bar(b, "4Hour") for sym, b in (raw or {}).items()}
+    except Exception:
+        four_hour = {}
+
+    for result in results:
+        result["spy_change_pct"] = spy_change.get(result.get("last_bar_date"))
+        result["sector"] = (lookup.get(result.get("symbol")) or {}).get("sector") or "—"
+        if not result.get("lifecycle"):
+            continue
+        bars = daily_bars.get(result["symbol"]) or []
+        changes = _daily_change_by_date(bars)
+        index = {_bar_market_date(b): i for i, b in enumerate(bars)}
+        for event in result["lifecycle"]:
+            crossed = _event_market_date(event.get("trigger_bar_time"))
+            ctx: Dict[str, Any] = {"crossed": crossed}
+            i = index.get(crossed)
+            if i is not None and i >= 20:
+                trailing = [_safe_float(b.get("v")) for b in bars[i - 20:i]]
+                vol = _safe_float(bars[i].get("v"))
+                if vol is not None and all(v is not None for v in trailing) and sum(trailing) > 0:
+                    ctx["crossing_rel_volume"] = vol / (sum(trailing) / 20)
+            ctx["crossing_change_pct"] = changes.get(crossed)
+            ctx["spy_crossing_change_pct"] = spy_change.get(crossed)
+            ctx["four_hour"] = _four_hour_alignment(four_hour.get(result["symbol"]),
+                                                    _safe_float(event.get("structure_level")),
+                                                    event.get("direction") == "Bullish")
+            event["report_context"] = ctx
 
 
 def _event_market_date(bar_time: Any) -> Optional[str]:
@@ -524,50 +600,126 @@ def _report_lifecycle_events(events: List[Dict[str, Any]], report_date: Optional
     shown = []
     for event in events:
         stage = event.get("stage")
-        failed_today = stage == "INVALIDATED" and _event_market_date(event.get("terminal_bar_time")) == report_date
-        if stage in ("TRIGGERED", "CONFIRMED") or failed_today:
+        if stage in ("TRIGGERED", "CONFIRMED"):
+            shown.append(event)
+        elif stage == "INVALIDATED" and not _superseded(event, events):
+            # Failed attempts stay listed (no time limit) as levels to watch for
+            # another attempt, until the same level is crossed again.
             shown.append(event)
     return shown
 
 
+def _superseded(event: Dict[str, Any], events: List[Dict[str, Any]]) -> bool:
+    """A later attempt at the same level (within 1%) replaces a failed one."""
+    level = _safe_float(event.get("structure_level"))
+    if not level:
+        return False
+    for other in events:
+        if other is event or other.get("signal_type") != event.get("signal_type"):
+            continue
+        o = _safe_float(other.get("structure_level"))
+        if o and abs(o / level - 1) <= 0.01 and str(other.get("trigger_bar_time") or "") > str(event.get("trigger_bar_time") or ""):
+            return True
+    return False
+
+
+def _pct(value: Any, signed: bool = True) -> str:
+    v = _safe_float(value)
+    return "n/a" if v is None else (f"{v:+.2f}%" if signed else f"{v:.2f}%")
+
+
 def _lifecycle_sections(rows: List[Dict[str, Any]], report_date: str, signal: str) -> Dict[str, List[Dict[str, Any]]]:
-    """New Today / Confirmed / Holding / Failed Today items for one signal type."""
-    out: Dict[str, List[Dict[str, Any]]] = {"new": [], "confirmed": [], "holding": [], "failed": []}
+    """Breakout or breakdown entries grouped by lifecycle stage, with the
+    measurements each table row shows."""
+    out: Dict[str, List[Dict[str, Any]]] = {"new": [], "confirmed": [], "holding": [], "failed": [], "retry": []}
     for row in rows:
+        price = _safe_float(row.get("price"))
+        today = _safe_float(row.get("change_pct"))
+        spy_today = _safe_float(row.get("spy_change_pct"))
         for event in row.get("lifecycle") or []:
             if event.get("signal_type") != signal:
                 continue
+            ctx = event.get("report_context") or {}
             stage = event.get("stage")
-            crossed = _event_market_date(event.get("trigger_bar_time")) or "?"
-            sessions = int(event.get("bars_observed_after_trigger") or 0)
             bullish = event.get("direction") == "Bullish"
-            parts = [f"{event.get('direction')}",
-                     f"attempt {int(event.get('attempt') or 1)}",
-                     f"level {_fmt(event.get('structure_level'), 2)}",
-                     f"crossed {crossed}" + (f" ({sessions} session{'s' if sessions != 1 else ''} ago)" if sessions else "")]
-            if event.get("pct_since_trigger") is not None and sessions:
-                sign = 1 if bullish else -1   # stored in the break's direction; shown as the price move
-                parts.append(f"price {sign * float(event['pct_since_trigger']):+.2f}% since crossing close"
-                             f" (best {sign * float(event.get('best_pct_since_trigger') or 0):+.2f}%)")
-            if event.get("confirmed_bar_time"):
-                parts.append(f"confirmed {_event_market_date(event['confirmed_bar_time'])}")
+            sign = 1 if bullish else -1
+            level = _safe_float(event.get("structure_level"))
+            crossed = ctx.get("crossed") or _event_market_date(event.get("trigger_bar_time")) or "?"
+            sessions = int(event.get("bars_observed_after_trigger") or 0)
+            failed_on = _event_market_date(event.get("terminal_bar_time")) if stage == "INVALIDATED" else None
             if stage == "INVALIDATED":
-                side = "below" if bullish else "above"
-                parts.append(f"closed {_fmt(event.get('terminal_price'), 2)}, back {side} the level"
-                             + (" after confirmation" if event.get("failed_after_confirmation") else " before confirming"))
-                bucket = "failed"
+                bucket = "failed" if failed_on == report_date else "retry"
             elif crossed == report_date:
-                parts.append(f"confirms on a later close {'above' if bullish else 'below'} {_fmt(event.get('confirmation_level'), 2)}")
                 bucket = "new"
             elif stage == "CONFIRMED":
                 bucket = "confirmed"
             else:
-                parts.append(f"not yet confirmed (needs a close {'above' if bullish else 'below'} {_fmt(event.get('confirmation_level'), 2)})")
                 bucket = "holding"
-            out[bucket].append(dict(symbol=row.get("symbol", ""), price=row.get("price"), date=report_date,
-                                    label=("Bullish breakout" if bullish else "Bearish breakdown"),
-                                    evidence="; ".join(parts), priority=sessions))
+            cc, sc = _safe_float(ctx.get("crossing_change_pct")), _safe_float(ctx.get("spy_crossing_change_pct"))
+            confirm_word = "above" if bullish else "below"
+            if bucket == "failed":
+                status = "Failed after confirmation" if event.get("failed_after_confirmation") else "Failed before confirming"
+            elif bucket == "retry":
+                status = f"Failed {failed_on}; watching for attempt {int(event.get('attempt') or 1) + 1}"
+            elif stage == "CONFIRMED":
+                status = f"Confirmed {_event_market_date(event.get('confirmed_bar_time'))}"
+            else:
+                status = f"Needs a close {confirm_word} {_fmt(event.get('confirmation_level'), 2)} to confirm"
+            out[bucket].append(dict(
+                symbol=row.get("symbol", ""),
+                direction="Bullish (long)" if bullish else "Bearish (short)",
+                close=price,
+                sector=row.get("sector") or "—",
+                level=level,
+                attempt=int(event.get("attempt") or 1),
+                crossed=crossed,
+                sessions=sessions,
+                today=today,
+                today_vs_spy=(today - spy_today) if today is not None and spy_today is not None else None,
+                crossing_vs_spy=(cc - sc) if cc is not None and sc is not None else None,
+                beyond=(sign * (price / level - 1) * 100) if price and level else None,
+                # Both stored in the break's direction (positive = moving the way it broke),
+                # matching Beyond level.
+                since=_safe_float(event.get("pct_since_trigger")),
+                best=_safe_float(event.get("best_pct_since_trigger")),
+                rel_volume=ctx.get("crossing_rel_volume"),
+                four_hour=ctx.get("four_hour") or "n/a",
+                status=status,
+                priority=sessions,
+            ))
+    for items in out.values():
+        items.sort(key=lambda i: (i["priority"], i["symbol"]))
     return out
+
+
+_CROSSING_HEADERS = ["Symbol", "Direction", "Close", "Sector", "Level (attempt)", "Crossed",
+                     "Today (vs S&P)", "Crossing day vs S&P", "Beyond level", "Since crossing (best)",
+                     "Crossing-day volume", "4-hour", "Status"]
+
+
+def _crossing_row(i: Dict[str, Any]) -> str:
+    crossed = i["crossed"] + (f" ({i['sessions']} sessions ago)" if i["sessions"] > 1
+                              else " (1 session ago)" if i["sessions"] == 1 else "")
+    volume = "n/a" if i["rel_volume"] is None else f"{float(i['rel_volume']):.1f}x 20-day avg"
+    cells = [i["direction"], _fmt(i["close"], 2), i["sector"], f"{_fmt(i['level'], 2)} (#{i['attempt']})",
+             crossed, f"{_pct(i['today'])} ({_pct(i['today_vs_spy'])})", _pct(i["crossing_vs_spy"]),
+             _pct(i["beyond"]), f"{_pct(i['since'])} ({_pct(i['best'])})", volume, i["four_hour"], i["status"]]
+    return (f"<tr><td><strong>{_esc(i['symbol'])}</strong></td>"
+            + "".join(f"<td>{_esc(c)}</td>" for c in cells) + "</tr>")
+
+
+def _crossing_table(items: List[Dict[str, Any]], title: str, note: str, limit: int) -> str:
+    """Breakout/breakdown table. Symbol, direction and close come first so the
+    Content Hub reader (symbols_from_report_html) parses it like other tables."""
+    shown = items[:limit]
+    body = "".join(_crossing_row(i) for i in shown)
+    head = "".join(f"<th>{_esc(h)}</th>" for h in _CROSSING_HEADERS)
+    return f"""<section class="section"><h2>{_esc(title)} ({len(items)})</h2>
+      <p class="note">{_esc(note)}</p>
+      {(f'<table class="crossing"><thead><tr>{head}</tr></thead><tbody>' + body + '</tbody></table>')
+       if body else '<p class="muted">No symbols met this rule on the dated bars in this report.</p>'}
+      {f'<p class="note">Showing {limit} of {len(items)}.</p>' if len(items) > limit else ''}
+    </section>"""
 
 
 def _weis_verdict_table_html(rows: List[Dict[str, Any]], title: str, note: str = "", limit: int = 25, bearish: bool = False) -> str:
@@ -709,33 +861,95 @@ def _crossing_window_html(breakouts, breakouts_new, breakouts_holding,
     )
 
 
+def _crossing_summary_html(rows: List[Dict[str, Any]], report_date: str,
+                           outs: Dict[str, Dict[str, List[Dict[str, Any]]]]) -> str:
+    """Market context, counts by stage, crossings by date (clusters) and by sector."""
+    spy = next((_safe_float(r.get("spy_change_pct")) for r in rows if r.get("spy_change_pct") is not None), None)
+    up = sum(1 for r in rows if (_safe_float(r.get("change_pct")) or 0) > 0)
+    down = sum(1 for r in rows if (_safe_float(r.get("change_pct")) or 0) < 0)
+    stages = [("new", "New today"), ("confirmed", "Confirmed and holding"), ("holding", "Holding, not yet confirmed"),
+              ("failed", "Failed today"), ("retry", "Failed earlier, watching for another attempt")]
+    count_rows = "".join(
+        f"<tr><td>{label}</td><td class='num'>{len(outs['BREAKOUT'][k])}</td><td class='num'>{len(outs['BREAKDOWN'][k])}</td></tr>"
+        for k, label in stages)
+
+    by_date: Dict[str, Dict[str, Any]] = {}
+    by_sector: Dict[str, List[int]] = {}
+    for signal, col in (("BREAKOUT", 0), ("BREAKDOWN", 1)):
+        for k in ("new", "confirmed", "holding"):
+            for i in outs[signal][k]:
+                d = by_date.setdefault(i["crossed"], {"n": [0, 0], "spy": None})
+                d["n"][col] += 1
+                by_sector.setdefault(i["sector"], [0, 0])[col] += 1
+    for row in rows:   # S&P move on each crossing date, from the stored crossing context
+        for event in row.get("lifecycle") or []:
+            ctx = event.get("report_context") or {}
+            if ctx.get("crossed") in by_date and ctx.get("spy_crossing_change_pct") is not None:
+                by_date[ctx["crossed"]]["spy"] = ctx["spy_crossing_change_pct"]
+    dates = sorted(by_date, reverse=True)
+    date_rows = "".join(
+        f"<tr><td>{_esc(d)}</td><td class='num'>{by_date[d]['n'][0]}</td><td class='num'>{by_date[d]['n'][1]}</td>"
+        f"<td class='num'>{_pct(by_date[d]['spy'])}</td></tr>" for d in dates)
+    sector_rows = "".join(
+        f"<tr><td>{_esc(sec)}</td><td class='num'>{n[0]}</td><td class='num'>{n[1]}</td></tr>"
+        for sec, n in sorted(by_sector.items(), key=lambda kv: (-(kv[1][0] + kv[1][1]), kv[0])))
+    active_bo = sum(by_date[d]["n"][0] for d in dates)
+    cluster = ""
+    if active_bo:
+        top = max(dates, key=lambda d: by_date[d]["n"][0])
+        share = by_date[top]["n"][0] / active_bo * 100
+        cluster = (f"<p class='note'>Largest cluster: {by_date[top]['n'][0]} of {active_bo} active breakouts "
+                   f"({share:.0f}%) crossed on {_esc(top)}, when the S&P 500 moved {_pct(by_date[top]['spy'])}. "
+                   "When many crossings share one date, a market-wide move is the likely common cause, "
+                   "so treat them as one event rather than independent signals.</p>")
+    return f"""<section class="section"><h2>Breakouts and Breakdowns: Summary</h2>
+      <p class="note">S&P 500 (SPY) on {_esc(report_date)}: {_pct(spy)}. Universe breadth: {up} up, {down} down.
+      Breakouts and breakdowns are separate lists. Each is followed from the day it crossed a multi-touch
+      level, with no time limit, until a daily close back through that level. A stock that only falls less
+      than the market is showing relative strength, not a breakout; every entry below closed beyond its level.</p>
+      <div class="grid">
+        <div><table><thead><tr><th>Stage</th><th>Breakouts</th><th>Breakdowns</th></tr></thead><tbody>{count_rows}</tbody></table></div>
+        <div><table><thead><tr><th>Sector (active)</th><th>Breakouts</th><th>Breakdowns</th></tr></thead><tbody>{sector_rows or "<tr><td colspan='3' class='muted'>None</td></tr>"}</tbody></table></div>
+      </div>
+      <table><thead><tr><th>Crossing date (active)</th><th>Breakouts</th><th>Breakdowns</th><th>S&P 500 that day</th></tr></thead>
+      <tbody>{date_rows or "<tr><td colspan='4' class='muted'>None</td></tr>"}</tbody></table>
+      {cluster}
+      <p class="note">Columns in the lists below: Today (vs S&P) is the day's change and its difference from the
+      S&P 500; Crossing day vs S&P is the stock's move on the day it crossed minus the S&P 500's; Beyond level is
+      how far the close is past the level in the break's direction; Since crossing (best) is the move from the
+      crossing close in the break's direction, with the best close so far; Crossing-day volume is volume on the
+      crossing day against its 20-day average; 4-hour is Aligned when the latest completed 4-hour close is past the
+      level and on the break's side of its 20-bar average, Against when neither, Mixed otherwise.</p>
+    </section>"""
+
+
 def _lifecycle_sections_html(rows: List[Dict[str, Any]], report_date: str) -> str:
-    """Breakouts and breakdowns followed from the crossing bar with the Weis
-    Radar lifecycle engine, with no time limit: new, confirmed and still
-    holding, holding but not yet confirmed, and failed on this date."""
-    html_parts = []
-    for signal, plural, side, level_word in (("BREAKOUT", "Breakouts", "above", "resistance"),
-                                             ("BREAKDOWN", "Breakdowns", "below", "support")):
+    """Breakouts and breakdowns followed with the Weis Radar lifecycle engine."""
+    outs = {sig: _lifecycle_sections(rows, report_date, sig) for sig in CROSSING_SIGNALS}
+    parts = [_crossing_summary_html(rows, report_date, outs)]
+    for signal, plural, side, level_word, extreme in (("BREAKOUT", "Breakouts", "above", "resistance", "high"),
+                                                      ("BREAKDOWN", "Breakdowns", "below", "support", "low")):
         back = "below" if side == "above" else "above"
-        sec = _lifecycle_sections(rows, report_date, signal)
-        active = len(sec["new"]) + len(sec["confirmed"]) + len(sec["holding"])
-        html_parts += [
-            _opportunity_table(sec["new"], f"{plural}: New Today",
-                               f"Closed {side} a multi-touch {level_word} level on {report_date}. "
-                               f"{active} {plural.lower()[:-1] + ' is' if active == 1 else plural.lower() + ' are'} active in total, followed until a close back {back} the level. "
-                               "An observed crossing, not a forecast.", BREAKOUT_LIST_LIMIT),
-            _opportunity_table(sec["confirmed"], f"{plural}: Confirmed and Holding",
-                               f"Followed through: a later close went beyond the crossing day's {'high' if side == 'above' else 'low'}, "
-                               f"and every close since has stayed {side} the level. Watched with no time limit. "
-                               "Sorted most recent crossing first.", BREAKOUT_LIST_LIMIT),
-            _opportunity_table(sec["holding"], f"{plural}: Holding, Not Yet Confirmed",
-                               f"Still closing {side} the level but no close beyond the crossing day's {'high' if side == 'above' else 'low'} yet "
-                               "(moving sideways). Watched with no time limit.", BREAKOUT_LIST_LIMIT),
-            _opportunity_table(sec["failed"], f"{plural}: Failed Today",
-                               f"Closed back {back} the broken level on {report_date}, ending this attempt. "
-                               "A later crossing of the same level is tracked as a new, numbered attempt.", BREAKOUT_LIST_LIMIT),
+        sec = outs[signal]
+        parts += [
+            _crossing_table(sec["new"], f"{plural}: New Today",
+                            f"Closed {side} a multi-touch {level_word} level on {report_date}. Confirms on a later close "
+                            f"beyond the crossing day's {extreme}. An observed crossing, not a forecast.", BREAKOUT_LIST_LIMIT),
+            _crossing_table(sec["confirmed"], f"{plural}: Confirmed and Holding",
+                            f"A later close went beyond the crossing day's {extreme}, and every close since has stayed {side} "
+                            "the level. Still watched, with no time limit, until a close back through the level.", BREAKOUT_LIST_LIMIT),
+            _crossing_table(sec["holding"], f"{plural}: Holding, Not Yet Confirmed",
+                            f"Still closing {side} the level, but no close beyond the crossing day's {extreme} yet "
+                            "(moving sideways). Watched with no time limit.", BREAKOUT_LIST_LIMIT),
+            _crossing_table(sec["failed"], f"{plural}: Failed Today",
+                            f"Closed back {back} the level on {report_date}, ending this attempt. It moves to the "
+                            "watch list below in the next report.", BREAKOUT_LIST_LIMIT),
+            _crossing_table(sec["retry"], f"{plural}: Failed Earlier, Watching for Another Attempt",
+                            f"Earlier attempts that closed back {back} their level. Each stays listed, with no time limit, "
+                            "until the same level is crossed again; that new crossing appears above as the next numbered attempt. "
+                            "Beyond level is negative while price is back on the wrong side.", BREAKOUT_LIST_LIMIT),
         ]
-    return "".join(html_parts)
+    return "".join(parts)
 
 
 def build_report_html(report_date_str: str) -> str:
