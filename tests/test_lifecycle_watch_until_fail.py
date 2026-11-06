@@ -234,7 +234,49 @@ def test_trend_blank_until_gate_then_dated(monkeypatch):
     item = (sec["confirmed"] + sec["holding"])[0]
     assert item["trend"] == "Sideways, day 5" and item["direction"] == "Bullish breakout, day 5"
     rows, e = tracked(len(bars))               # later: gate crossed
-    assert e["trend_since"] and e["trend_since_day"] >= 6
     sec = re_._lifecycle_sections(rows, rows[0]["last_bar_date"], "BREAKOUT")
     item = (sec["confirmed"] + sec["holding"])[0]
-    assert item["trend"].startswith("Trending bullish since ")
+    assert item["trend"].startswith("Trending bullish, step 1") and item["trend_phase"] == "trending"
+
+
+def _mk(closes):
+    import datetime as dt
+    d, out = dt.date(2026, 6, 1), []
+    for c in closes:
+        while d.weekday() >= 5:
+            d += dt.timedelta(1)
+        out.append({"t": f"{d.isoformat()}T04:00:00Z", "o": c, "h": c + 0.3, "l": c - 0.3, "c": c, "v": 1000})
+        d += dt.timedelta(1)
+    return out
+
+
+UP = [100.0] * 25 + [101, 101.5, 102, 102.6, 103.2, 103.8, 104.4, 105, 105.6, 106.2]
+BOX1 = [105.5, 105.0, 104.8, 105.2, 105.9, 105.4, 105.1]
+LEG2 = [106.8, 107.5, 108.2, 108.9, 109.6]
+BOX2 = [109.0, 108.6, 108.9, 109.3, 108.7, 109.1]
+BRK = [108.0, 107.4]
+
+
+def test_stair_step_boxes_bullish():
+    from backend import reports_engine as re_
+    st = re_._trend_boxes(_mk(UP), 25, True)
+    assert st["phase"] == "trending" and st["step"] == 1
+    st = re_._trend_boxes(_mk(UP + BOX1), 25, True)
+    assert st["phase"] == "box" and st["box"]["high"] == 106.5 and st["box"]["low"] == 104.5
+    assert st["phase_day"] == len(BOX1)                       # the pause is counted from the day after the high
+    assert re_._trend_label(st, 0, True).startswith("In box 1, day 7: 104.50–106.50")
+    st = re_._trend_boxes(_mk(UP + BOX1 + LEG2), 25, True)
+    assert st["phase"] == "trending" and st["step"] == 2      # close above the box top: next step
+    assert re_._pivot_label(st, True) == "Prior box: R 106.50 / S 104.50"
+    st = re_._trend_boxes(_mk(UP + BOX1 + LEG2 + BOX2), 25, True)
+    assert st["phase"] == "box" and st["step"] == 2
+    st = re_._trend_boxes(_mk(UP + BOX1 + LEG2 + BOX2 + BRK), 25, True)
+    assert st["phase"] == "broken" and re_._trend_label(st, 0, True).startswith("Trend broken")
+
+
+def test_stair_step_boxes_bearish_mirror():
+    from backend import reports_engine as re_
+    mirrored = [200 - (c - 100) for c in UP + BOX1 + LEG2]
+    st = re_._trend_boxes(_mk(mirrored), 25, False)
+    assert st["phase"] == "trending" and st["step"] == 2
+    assert re_._pivot_label(st, False) == "Prior box: R 195.50 / S 193.50"

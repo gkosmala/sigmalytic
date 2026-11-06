@@ -547,6 +547,102 @@ def _trend_gate(closes: List[float], i: int, bullish: bool) -> bool:
     return closes[i] < avg and avg < prev_avg and change < -TREND_MIN_CHANGE_PCT
 
 
+BOX_CONFIRM_SESSIONS = 3
+
+
+def _trend_boxes(bars: List[Dict[str, Any]], i0: int, bullish: bool) -> Dict[str, Any]:
+    """Trend phases from the crossing bar i0 to the latest bar, as stair steps.
+
+    Bullish (breakdowns are the mirror image, run on negated prices):
+    - Sideways: before the trend gate is first crossed.
+    - Trending: gate crossed; step 1. Each close above a box top is the next step.
+    - Box: once 3 sessions pass with no new high, a box opens. Top = the trend's
+      highest high; bottom = the lowest low since, fixed after 3 sessions with no
+      new low. It extends right while closes stay inside.
+    - Close above the top: trend resumes (next step). Close below a fixed bottom:
+      trend broken, until the gate is crossed again (trend 2, step 1).
+    Box edges use highs/lows; a close beyond an edge ends the box."""
+    sign = 1 if bullish else -1
+    hi = [sign * (_safe_float(b.get("h")) if bullish else _safe_float(b.get("l"))) for b in bars]
+    lo = [sign * (_safe_float(b.get("l")) if bullish else _safe_float(b.get("h"))) for b in bars]
+    cl = [_safe_float(b.get("c")) for b in bars]
+    if any(v is None for v in cl):
+        return {}
+    cl_t = [sign * c for c in cl]
+    real = (lambda v: sign * v)
+    st: Dict[str, Any] = {"phase": "sideways", "trend": 0, "step": 0, "boxes": []}
+    high_i = None
+    box = None
+    for k in range(i0, len(bars)):
+        phase = st["phase"]
+        if phase in ("sideways", "broken"):
+            if _trend_gate(cl, k, bullish):
+                st.update(phase="trending", trend=st["trend"] + 1, step=1,
+                          trend_start=k, phase_start=k)
+                high_i = max(range(st.get("broken_at", i0) if phase == "broken" else i0, k + 1), key=lambda j: hi[j])
+            continue
+        if phase == "trending":
+            if hi[k] >= hi[high_i]:
+                high_i = k
+            elif k - high_i >= BOX_CONFIRM_SESSIONS:
+                lows = range(high_i + 1, k + 1)
+                b_i = min(lows, key=lambda j: lo[j])
+                box = {"top": hi[high_i], "bottom": lo[b_i], "bottom_i": b_i, "fixed": k - b_i >= BOX_CONFIRM_SESSIONS,
+                       "opened": k, "top_date": _bar_market_date(bars[high_i])}
+                st.update(phase="box", phase_start=high_i + 1)   # the pause began after the high
+            continue
+        if phase == "box":
+            if cl_t[k] > box["top"]:
+                st["boxes"].append(box)
+                st.update(phase="trending", step=st["step"] + 1, phase_start=k)
+                high_i, box = k, None
+            elif box["fixed"] and cl_t[k] < box["bottom"]:
+                st["boxes"].append(box)
+                st.update(phase="broken", phase_start=k, broken_at=k, broken_date=_bar_market_date(bars[k]))
+                box = None
+            elif not box["fixed"]:
+                if lo[k] < box["bottom"]:
+                    box["bottom"], box["bottom_i"] = lo[k], k
+                if k - box["bottom_i"] >= BOX_CONFIRM_SESSIONS:
+                    box["fixed"] = True
+    last = len(bars) - 1
+    st["phase_day"] = last - st.get("phase_start", i0) + 1
+    st["trend_start_date"] = _bar_market_date(bars[st["trend_start"]]) if "trend_start" in st else None
+
+    def edges(b):
+        a, c = real(b["bottom"]), real(b["top"])
+        return {"low": min(a, c), "high": max(a, c), "fixed": b["fixed"], "top_date": b["top_date"]}
+    st["box"] = edges(box) if box else None
+    st["prior_boxes"] = [edges(b) for b in st.pop("boxes")]
+    return st
+
+
+def _trend_label(st: Dict[str, Any], day: int, bullish: bool) -> str:
+    word = "bullish" if bullish else "bearish"
+    prefix = f"Trend {st['trend']}: " if st.get("trend", 0) > 1 else ""
+    phase = st.get("phase")
+    if phase == "trending":
+        return f"{prefix}Trending {word}, step {st['step']} (trend began {st['trend_start_date']})"
+    if phase == "box":
+        b = st["box"]
+        bottom = "" if b["fixed"] else ", bottom still forming"
+        return (f"{prefix}In box {st['step']}, day {st['phase_day']}: "
+                f"{_fmt(b['low'], 2)}–{_fmt(b['high'], 2)}{bottom}")
+    if phase == "broken":
+        side = "bottom" if bullish else "top"
+        return f"Trend broken {st['broken_date']} (closed beyond box {st['step']} {side}), day {st['phase_day']}"
+    return f"Sideways, day {day}"
+
+
+def _pivot_label(st: Dict[str, Any], bullish: bool) -> str:
+    """Box edges as resistance (R) and support (S): the current box, then the prior one."""
+    parts = []
+    for name, b in (("Box", st.get("box")), ("Prior box", (st.get("prior_boxes") or [None])[-1])):
+        if b:
+            parts.append(f"{name}: R {_fmt(b['high'], 2)} / S {_fmt(b['low'], 2)}")
+    return "; ".join(parts)
+
+
 def _four_hour_alignment(bars: List[Dict[str, Any]], level: Optional[float], bullish: bool) -> str:
     """Whether the 4-hour chart agrees with the daily break: the latest completed
     4-hour close is beyond the level, and above (bullish) / below (bearish) its
@@ -607,16 +703,15 @@ def _enrich_crossing_rows(results, daily_bars, fetch_bars_batch, trim_incomplete
                                                     event.get("direction") == "Bullish")
             # Day count: the crossing day is day 1.
             ctx["day"] = int(event.get("bars_observed_after_trigger") or 0) + 1
-            # Trend: blank until the gate is first crossed on or after the
-            # crossing day; then kept (stored on the event) for this attempt.
-            if event.get("stage") in ("TRIGGERED", "CONFIRMED") and not event.get("trend_since") and i is not None:
-                closes = [_safe_float(b.get("c")) for b in bars]
-                if all(c is not None for c in closes):
-                    for j in range(i, len(closes)):
-                        if _trend_gate(closes, j, event.get("direction") == "Bullish"):
-                            event["trend_since"] = _bar_market_date(bars[j])
-                            event["trend_since_day"] = j - i + 1
-                            break
+            # Trend phases (sideways / trending in steps / box / broken),
+            # recomputed nightly from the crossing bar. Kept on the event so a
+            # crossing older than the fetched bars still shows its last state.
+            if event.get("stage") in ("TRIGGERED", "CONFIRMED"):
+                if i is not None:
+                    state = _trend_boxes(bars, i, event.get("direction") == "Bullish")
+                    if state:
+                        event["trend_state"] = state
+                ctx["trend_state"] = event.get("trend_state")
             event["report_context"] = ctx
 
 
@@ -701,11 +796,10 @@ def _lifecycle_sections(rows: List[Dict[str, Any]], report_date: str, signal: st
             out[bucket].append(dict(
                 symbol=row.get("symbol", ""),
                 direction=(f"{'Bullish breakout' if bullish else 'Bearish breakdown'}, day {ctx.get('day') or sessions + 1}"),
-                # Sideways with its day count until the trend gate is first
-                # crossed; then trending, with the date and day it began.
                 trend=("" if stage == "INVALIDATED" else
-                       f"Trending {'bullish' if bullish else 'bearish'} since {event['trend_since']} (day {event.get('trend_since_day')})"
-                       if event.get("trend_since") else f"Sideways, day {ctx.get('day') or sessions + 1}"),
+                       _trend_label(ctx.get("trend_state") or {}, ctx.get("day") or sessions + 1, bullish)),
+                trend_phase=("" if stage == "INVALIDATED" else (ctx.get("trend_state") or {}).get("phase", "sideways")),
+                pivots=("" if stage == "INVALIDATED" else _pivot_label(ctx.get("trend_state") or {}, bullish)),
                 close=price,
                 sector=row.get("sector") or "—",
                 level=level,
@@ -730,7 +824,7 @@ def _lifecycle_sections(rows: List[Dict[str, Any]], report_date: str, signal: st
     return out
 
 
-_CROSSING_HEADERS = ["Symbol", "Breakout / breakdown", "Close", "Sector", "Trend", "Level (attempt)", "Crossed",
+_CROSSING_HEADERS = ["Symbol", "Breakout / breakdown", "Close", "Sector", "Trend", "Pivots (box edges)", "Level (attempt)", "Crossed",
                      "Today (vs S&P)", "Crossing day vs S&P", "Beyond level", "Since crossing (best)",
                      "Crossing-day volume", "4-hour", "Status"]
 
@@ -739,7 +833,7 @@ def _crossing_row(i: Dict[str, Any]) -> str:
     crossed = i["crossed"] + (f" ({i['sessions']} sessions ago)" if i["sessions"] > 1
                               else " (1 session ago)" if i["sessions"] == 1 else "")
     volume = "n/a" if i["rel_volume"] is None else f"{float(i['rel_volume']):.1f}x 20-day avg"
-    cells = [i["direction"], _fmt(i["close"], 2), i["sector"], i.get("trend") or "",
+    cells = [i["direction"], _fmt(i["close"], 2), i["sector"], i.get("trend") or "", i.get("pivots") or "",
              f"{_fmt(i['level'], 2)} (#{i['attempt']})",
              crossed, f"{_pct(i['today'])} ({_pct(i['today_vs_spy'])})", _pct(i["crossing_vs_spy"]),
              _pct(i["beyond"]), f"{_pct(i['since'])} ({_pct(i['best'])})", volume, i["four_hour"], i["status"]]
@@ -911,14 +1005,12 @@ def _crossing_summary_html(rows: List[Dict[str, Any]], report_date: str,
     count_rows = "".join(
         f"<tr><td>{label}</td><td class='num'>{len(outs['BREAKOUT'][k])}</td><td class='num'>{len(outs['BREAKDOWN'][k])}</td></tr>"
         for k, label in stages)
-    trending = [sum(1 for k in ("new", "confirmed", "holding") for i in outs[sig][k]
-                    if str(i.get("trend")).startswith("Trending")) for sig in CROSSING_SIGNALS]
-    sideways = [sum(1 for k in ("new", "confirmed", "holding") for i in outs[sig][k]
-                    if str(i.get("trend")).startswith("Sideways")) for sig in CROSSING_SIGNALS]
-    count_rows += (f"<tr><td><strong>Active and trending</strong></td><td class='num'>{trending[0]}</td>"
-                   f"<td class='num'>{trending[1]}</td></tr>"
-                   f"<tr><td><strong>Active and sideways</strong></td><td class='num'>{sideways[0]}</td>"
-                   f"<td class='num'>{sideways[1]}</td></tr>")
+    for phase, label in (("trending", "Active: trending"), ("box", "Active: pausing in a box"),
+                         ("broken", "Active: trend broken"), ("sideways", "Active: sideways, trend not started")):
+        n = [sum(1 for k in ("new", "confirmed", "holding") for i in outs[sig][k] if i.get("trend_phase") == phase)
+             for sig in CROSSING_SIGNALS]
+        count_rows += (f"<tr><td><strong>{label}</strong></td><td class='num'>{n[0]}</td>"
+                       f"<td class='num'>{n[1]}</td></tr>")
 
     by_date: Dict[str, Dict[str, Any]] = {}
     by_sector: Dict[str, List[int]] = {}
@@ -964,7 +1056,11 @@ def _crossing_summary_html(rows: List[Dict[str, Any]], report_date: str,
       <p class="note">Each entry is named a bullish breakout or bearish breakdown with its day count (the crossing
       day is day 1) and keeps that name until a daily close back through the level. Trend shows Sideways with its day
       count until the trend gate is first crossed: close above its 10-day average, the average rising, and the 10-day change above
-      +2% (for breakdowns: below a falling average and below -2%). It then shows the date the trend began.</p>
+      +2% (for breakdowns: below a falling average and below -2%). The trend then moves in steps. When a bullish trend
+      goes 3 sessions without a new high, a box opens: its top is the trend's high, its bottom the lowest low since,
+      fixed after 3 sessions without a new low. The box extends while closes stay inside it. A close above the top is
+      the next step; a close below the fixed bottom breaks the trend until the gate is crossed again (trend 2).
+      Breakdowns mirror this. Pivots lists the current and prior box edges as resistance (R) and support (S).</p>
       <p class="note">Columns in the lists below: Today (vs S&P) is the day's change and its difference from the
       S&P 500; Crossing day vs S&P is the stock's move on the day it crossed minus the S&P 500's; Beyond level is
       how far the close is past the level in the break's direction; Since crossing (best) is the move from the
