@@ -348,6 +348,22 @@ def scan_symbol_for_weis_patterns(engine, df: pd.DataFrame) -> list:
             elif building == "UPTHRUST_BUILDING":
                 hits.append({"type": "UPTHRUST_BUILDING", "level": round(float(resistance), 2)})
 
+    if breakout or breakdown:
+        # ADDED (2026-11-06): stair-step trend boxes (backend/trend_boxes.py),
+        # the same rules the daily report uses, so the radar row and the
+        # chart describe a breakout/breakdown the same way.
+        try:
+            from backend.trend_boxes import boxes_for_crossing
+            rows = df[["date", "open", "high", "low", "close"]].to_dict("records")
+            for h in hits:
+                if h["type"] in ("BREAKOUT", "BREAKDOWN"):
+                    tb = boxes_for_crossing(rows, h, date_of=lambda b: str(b["t"]))
+                    if tb:
+                        h.update(trend=tb["trend_label"], pivots=tb["pivots_label"], trend_phase=tb["phase"],
+                                 trend_day=tb["day"], true_crossing_date=tb["crossing_date"])
+        except Exception:
+            pass
+
     return [{"price": round(price, 2), **h} for h in hits] if hits else []
 
 

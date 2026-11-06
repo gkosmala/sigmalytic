@@ -531,118 +531,20 @@ def _daily_change_by_date(bars: List[Dict[str, Any]]) -> Dict[str, float]:
     return out
 
 
-TREND_AVERAGE_BARS = 10
-TREND_MIN_CHANGE_PCT = 2.0
+# Trend boxes live in backend/trend_boxes.py, shared with the Weis Radar and
+# the chart; these wrappers keep the report's market-date convention.
+from backend import trend_boxes as _tb
 
-
-def _trend_gate(closes: List[float], i: int, bullish: bool) -> bool:
-    """Trend gate on bar i: close beyond its 10-day average, the average moving
-    the break's way, and the 10-day change beyond +2% (or -2% for breakdowns)."""
-    n = TREND_AVERAGE_BARS
-    if i < n or i >= len(closes):
-        return False
-    avg = sum(closes[i - n + 1:i + 1]) / n
-    prev_avg = sum(closes[i - n:i]) / n
-    change = (closes[i] / closes[i - n] - 1) * 100 if closes[i - n] else 0.0
-    if bullish:
-        return closes[i] > avg and avg > prev_avg and change > TREND_MIN_CHANGE_PCT
-    return closes[i] < avg and avg < prev_avg and change < -TREND_MIN_CHANGE_PCT
-
-
-BOX_CONFIRM_SESSIONS = 3
+TREND_AVERAGE_BARS = _tb.TREND_AVERAGE_BARS
+TREND_MIN_CHANGE_PCT = _tb.TREND_MIN_CHANGE_PCT
+BOX_CONFIRM_SESSIONS = _tb.BOX_CONFIRM_SESSIONS
+_trend_gate = _tb.trend_gate
+_trend_label = _tb.trend_label
+_pivot_label = _tb.pivot_label
 
 
 def _trend_boxes(bars: List[Dict[str, Any]], i0: int, bullish: bool) -> Dict[str, Any]:
-    """Trend phases from the crossing bar i0 to the latest bar, as stair steps.
-
-    Bullish (breakdowns are the mirror image, run on negated prices):
-    - Sideways: before the trend gate is first crossed.
-    - Trending: gate crossed; step 1. Each close above a box top is the next step.
-    - Box: once 3 sessions pass with no new high, a box opens. Top = the trend's
-      highest high; bottom = the lowest low since, fixed after 3 sessions with no
-      new low. It extends right while closes stay inside.
-    - Close above the top: trend resumes (next step). Close below a fixed bottom:
-      trend broken, until the gate is crossed again (trend 2, step 1).
-    Box edges use highs/lows; a close beyond an edge ends the box."""
-    sign = 1 if bullish else -1
-    hi = [sign * (_safe_float(b.get("h")) if bullish else _safe_float(b.get("l"))) for b in bars]
-    lo = [sign * (_safe_float(b.get("l")) if bullish else _safe_float(b.get("h"))) for b in bars]
-    cl = [_safe_float(b.get("c")) for b in bars]
-    if any(v is None for v in cl):
-        return {}
-    cl_t = [sign * c for c in cl]
-    real = (lambda v: sign * v)
-    st: Dict[str, Any] = {"phase": "sideways", "trend": 0, "step": 0, "boxes": []}
-    high_i = None
-    box = None
-    for k in range(i0, len(bars)):
-        phase = st["phase"]
-        if phase in ("sideways", "broken"):
-            if _trend_gate(cl, k, bullish):
-                st.update(phase="trending", trend=st["trend"] + 1, step=1,
-                          trend_start=k, phase_start=k)
-                high_i = max(range(st.get("broken_at", i0) if phase == "broken" else i0, k + 1), key=lambda j: hi[j])
-            continue
-        if phase == "trending":
-            if hi[k] >= hi[high_i]:
-                high_i = k
-            elif k - high_i >= BOX_CONFIRM_SESSIONS:
-                lows = range(high_i + 1, k + 1)
-                b_i = min(lows, key=lambda j: lo[j])
-                box = {"top": hi[high_i], "bottom": lo[b_i], "bottom_i": b_i, "fixed": k - b_i >= BOX_CONFIRM_SESSIONS,
-                       "opened": k, "top_date": _bar_market_date(bars[high_i])}
-                st.update(phase="box", phase_start=high_i + 1)   # the pause began after the high
-            continue
-        if phase == "box":
-            if cl_t[k] > box["top"]:
-                st["boxes"].append(box)
-                st.update(phase="trending", step=st["step"] + 1, phase_start=k)
-                high_i, box = k, None
-            elif box["fixed"] and cl_t[k] < box["bottom"]:
-                st["boxes"].append(box)
-                st.update(phase="broken", phase_start=k, broken_at=k, broken_date=_bar_market_date(bars[k]))
-                box = None
-            elif not box["fixed"]:
-                if lo[k] < box["bottom"]:
-                    box["bottom"], box["bottom_i"] = lo[k], k
-                if k - box["bottom_i"] >= BOX_CONFIRM_SESSIONS:
-                    box["fixed"] = True
-    last = len(bars) - 1
-    st["phase_day"] = last - st.get("phase_start", i0) + 1
-    st["trend_start_date"] = _bar_market_date(bars[st["trend_start"]]) if "trend_start" in st else None
-
-    def edges(b):
-        a, c = real(b["bottom"]), real(b["top"])
-        return {"low": min(a, c), "high": max(a, c), "fixed": b["fixed"], "top_date": b["top_date"]}
-    st["box"] = edges(box) if box else None
-    st["prior_boxes"] = [edges(b) for b in st.pop("boxes")]
-    return st
-
-
-def _trend_label(st: Dict[str, Any], day: int, bullish: bool) -> str:
-    word = "bullish" if bullish else "bearish"
-    prefix = f"Trend {st['trend']}: " if st.get("trend", 0) > 1 else ""
-    phase = st.get("phase")
-    if phase == "trending":
-        return f"{prefix}Trending {word}, step {st['step']} (trend began {st['trend_start_date']})"
-    if phase == "box":
-        b = st["box"]
-        bottom = "" if b["fixed"] else ", bottom still forming"
-        return (f"{prefix}In box {st['step']}, day {st['phase_day']}: "
-                f"{_fmt(b['low'], 2)}–{_fmt(b['high'], 2)}{bottom}")
-    if phase == "broken":
-        side = "bottom" if bullish else "top"
-        return f"Trend broken {st['broken_date']} (closed beyond box {st['step']} {side}), day {st['phase_day']}"
-    return f"Sideways, day {day}"
-
-
-def _pivot_label(st: Dict[str, Any], bullish: bool) -> str:
-    """Box edges as resistance (R) and support (S): the current box, then the prior one."""
-    parts = []
-    for name, b in (("Box", st.get("box")), ("Prior box", (st.get("prior_boxes") or [None])[-1])):
-        if b:
-            parts.append(f"{name}: R {_fmt(b['high'], 2)} / S {_fmt(b['low'], 2)}")
-    return "; ".join(parts)
+    return _tb.trend_boxes(bars, i0, bullish, date_of=_bar_market_date)
 
 
 def _four_hour_alignment(bars: List[Dict[str, Any]], level: Optional[float], bullish: bool) -> str:

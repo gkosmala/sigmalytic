@@ -4387,8 +4387,15 @@ def _format_weis_radar_hit(h):
         days_back = int(h.get("days_back") or 0)
         status_txt = "NEW TODAY" if days_back == 0 else f"HOLDING {days_back} bar{'s' if days_back != 1 else ''}"
         details.append(f"{h.get('pct_beyond')}% beyond")
-        details.append(f"crossed {h.get('date')} ({days_back} bars ago)")
+        details.append(f"crossed {h.get('true_crossing_date') or h.get('date')}"
+                       + (f" (day {h.get('trend_day')})" if h.get("trend_day") else f" ({days_back} bars ago)"))
         details.append(status_txt)
+        # ADDED (2026-11-06): stair-step trend boxes, same rules as the
+        # daily report (backend/trend_boxes.py).
+        if h.get("trend"):
+            details.append(h["trend"])
+        if h.get("pivots"):
+            details.append(h["pivots"])
     detail_text = f" ({', '.join(details)})" if details else ""
     return html.Span([
         html.Span(t.replace("_", " "), style={"color": color, "fontWeight": "800"}),
@@ -7303,6 +7310,7 @@ def _build_weis_radar_chart_html(chart_data, ma_period=20):
     # and simply doesn't draw those layers, same degrade pattern as
     # the existing call_wall/put_wall/gamma_flip fields.
     weis_lines_data = chart_data.get("weis_lines")
+    trend_boxes_data = chart_data.get("trend_boxes")   # None when no active breakout/breakdown
 
     def wall_fields(value):
         if value is None:
@@ -7323,6 +7331,7 @@ def _build_weis_radar_chart_html(chart_data, ma_period=20):
     html_doc = html_doc.replace("__BARS_JSON__", json.dumps(bars_for_js))
     html_doc = html_doc.replace("__HITS_JSON__", json.dumps(hits_for_js))
     html_doc = html_doc.replace("__WEIS_LINES_JSON__", json.dumps(weis_lines_data))
+    html_doc = html_doc.replace("__TREND_BOXES_JSON__", json.dumps(trend_boxes_data))
     html_doc = html_doc.replace("__CALL_WALL_CHECKED__", call_checked)
     html_doc = html_doc.replace("__CALL_WALL_VALUE__", call_value)
     html_doc = html_doc.replace("__CALL_WALL_NOTE__", call_note)
@@ -7548,12 +7557,21 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
     </div>
   </div>
 
+  <div class="ctrl">
+    <label>Trend boxes (daily report rules)</label>
+    <div class="radio-group">
+      <label><input type="checkbox" id="showTrendBoxes" checked> Boxes</label>
+    </div>
+    <span class="missing-note" id="trendBoxesNote">Stair-step boxes for the active breakout or breakdown.</span>
+  </div>
+
     </div>
   </details>
 </div>
 </details>
 <div id="calibrationPanel" class="calibration-box"></div>
 <div class="stats" id="stats"></div>
+<div id="trendBoxesSummary" style="margin:2px 0 6px 0; color:#c8d3de; font-size:12px;"></div>
 <div style="margin:4px 0 8px 0;">
   <button id="resetZoomBtn" style="background:#1a2230; border:1px solid #3a4a5f; color:#c8d3de; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px;">&#10558; Reset Zoom</button>
   <span style="color:#5c6773; font-size:11px; margin-left:10px;">Drag a box on any panel to zoom in. Double-click, or use the button, to return to normal.</span>
@@ -7601,6 +7619,7 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
 const RAW_BARS = __BARS_JSON__;
 const HITS = __HITS_JSON__;
 const WEIS_LINES = __WEIS_LINES_JSON__;  // null if unavailable -- see weis_lines_data above
+const TREND_BOXES = __TREND_BOXES_JSON__;  // stair-step boxes for the active breakout/breakdown, or null
 const TIMEFRAME = __TIMEFRAME__;
 const SESSION_HOURS = __SESSION_HOURS__;
 document.getElementById('sessionCaption').textContent = {
@@ -7801,6 +7820,7 @@ const QUICK_TOGGLES = [
   ['S/R','showSR'],['SOS/SOW','showSOSSOW'],['Effort/Result','showEffort'],['Absorption','showAbsorption'],
   ['Ease of move','showEOM'],['Close meaning','showMOC'],['Thrust','showSOT'],
   ['Call wall','showCallWall'],['Put wall','showPutWall'],['Gamma flip','showGammaFlip'],
+  ['Trend boxes','showTrendBoxes'],
 ];
 function syncQuickToggles() {
   for (const b of document.querySelectorAll('#quickToggles button[data-cb]')) {
@@ -8804,7 +8824,7 @@ const PERSISTED_CHECKBOX_IDS = [
   'showSR','showEffort','showSOSSOW','showSOT','showEOM','showMOC','showAbsorption',
   'showManualLine1','showManualLine2',
   'showWeisZigzag','showWeisPivots','showWeisAxisLines','showWeisTrendlines',
-  'showWeisChannels','showWeisIceLine','showWeisConfluence',
+  'showWeisChannels','showWeisIceLine','showWeisConfluence','showTrendBoxes',
   'sig_spring','sig_upthrust','sig_breakout','sig_breakdown','sig_3bar',
   // Deliberately NOT persisting showWeisAll -- it's a momentary "set all
   // the others to this state" action, not a state of its own (see the
@@ -9021,6 +9041,40 @@ function render() {
     color:'#eab308', line:{color:'#78350f', width:1}}, name:'Confluence', xaxis:'x', yaxis:'y', showlegend:false,
     hoverinfo:'skip'};
   const weisExtraTraces = [];
+
+  // ---- Stair-step trend boxes (backend/trend_boxes.py): each box spans
+  // from the trend high (low for breakdowns) that started the pause to the
+  // bar that closed out of it, or to the latest bar while still open.
+  {
+    const note = document.getElementById('trendBoxesNote');
+    const summary = document.getElementById('trendBoxesSummary');
+    if (!TREND_BOXES) {
+      if (note) note.textContent = 'No active breakout or breakdown on this timeframe, so no boxes.';
+      if (summary) summary.textContent = '';
+    } else {
+      const tb = TREND_BOXES;
+      const kind = tb.direction === 'Bullish' ? 'Bullish breakout' : 'Bearish breakdown';
+      const text = `${kind}, day ${tb.day} (crossed ${tb.crossing_date} at ${Number(tb.level).toFixed(2)}): ${tb.trend_label}` +
+        (tb.pivots_label ? ` | ${tb.pivots_label}` : '');
+      if (note) note.textContent = text;
+      if (summary) summary.textContent = 'Trend boxes: ' + text;
+      if (document.getElementById('showTrendBoxes').checked) {
+        const col = tb.direction === 'Bullish' ? '46,204,113' : '231,76,60';
+        const lastDate = dates[dates.length - 1];
+        for (const b of tb.boxes || []) {
+          if (!dates.includes(b.top_date)) continue;
+          const x1 = dates.includes(b.end_date) ? b.end_date : lastDate;
+          const open = !b.exit;
+          allShapes.push({type:'rect', xref:'x', yref:'y', x0:b.top_date, x1, y0:b.low, y1:b.high,
+            fillcolor:`rgba(${col},0.10)`, line:{color:`rgba(${col},0.85)`, width:1.4, dash: b.fixed ? 'solid' : 'dot'},
+            layer:'below'});
+          allAnnotations.push({xref:'x', yref:'y', x:b.top_date, y:b.high, xanchor:'left', yanchor:'bottom',
+            text:`Box ${b.number}${open ? ' (open)' : ''}`, showarrow:false,
+            font:{color:`rgb(${col})`, size:10}});
+        }
+      }
+    }
+  }
 
   if (WEIS_LINES) {
     const wlBarIndex = (i) => (i >= 0 && i < dates.length) ? dates[i] : null;
@@ -9417,6 +9471,7 @@ document.getElementById('sig_upthrust').addEventListener('change', render);
 document.getElementById('sig_breakout').addEventListener('change', render);
 document.getElementById('sig_breakdown').addEventListener('change', render);
 document.getElementById('sig_3bar').addEventListener('change', render);
+document.getElementById('showTrendBoxes').addEventListener('change', render);
 document.getElementById('manualType2').addEventListener('change', render);
 document.getElementById('manualDate2a').addEventListener('change', render);
 document.getElementById('manualDate2b').addEventListener('change', render);
