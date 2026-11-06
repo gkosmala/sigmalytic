@@ -32,6 +32,15 @@ LIFECYCLE_VERSION = 1
 ACTIVE_STAGE = "TRIGGERED"
 TERMINAL_STAGES = {"CONFIRMED", "INVALIDATED"}
 
+# ADDED (2026-11-06): structural breakouts/breakdowns are watched with no time
+# limit. CONFIRMED is not final for them: the event stays open until a later
+# completed bar closes back through the broken level, which INVALIDATES it
+# (recorded as failed after confirmation). They also start from the bar on
+# which the level was actually crossed, not the scan that first noticed them,
+# and repeat attempts at the same level are numbered.
+WATCH_UNTIL_FAIL_SIGNALS = {"BREAKOUT", "BREAKDOWN"}
+ATTEMPT_LEVEL_TOLERANCE = 0.01  # levels within 1% count as the same level
+
 TRIGGER_SIGNALS = {
     "SPRING",
     "UPTHRUST",
@@ -136,7 +145,7 @@ def _event_id(symbol: str, timeframe: str, signal: str, first_seen_bar_time: str
     return f"{symbol}:{timeframe}:{signal}:{suffix}"
 
 
-def _load_state(redis_client) -> dict:
+def _load_state(redis_client, key: str = WEIS_RADAR_LIFECYCLE_KEY) -> dict:
     if not redis_client:
         return {
             "version": LIFECYCLE_VERSION,
@@ -145,7 +154,7 @@ def _load_state(redis_client) -> dict:
             "events": {},
         }
     try:
-        raw = redis_client.get(WEIS_RADAR_LIFECYCLE_KEY)
+        raw = redis_client.get(key)
         if not raw:
             raise ValueError("empty")
         state = json.loads(raw)
@@ -200,9 +209,31 @@ def _snapshot_from_state(state: dict) -> dict:
     }
 
 
-def get_lifecycle_snapshot(redis_client) -> dict:
+def get_lifecycle_snapshot(redis_client, key: str = WEIS_RADAR_LIFECYCLE_KEY) -> dict:
     """Read the currently persisted lifecycle state without running a scan."""
-    return _snapshot_from_state(_load_state(redis_client))
+    return _snapshot_from_state(_load_state(redis_client, key))
+
+
+def _is_open(event: dict) -> bool:
+    """Still being watched: TRIGGERED, or a CONFIRMED breakout/breakdown that
+    has not yet closed back through its level."""
+    stage = event.get("stage")
+    if stage == ACTIVE_STAGE:
+        return True
+    return stage == "CONFIRMED" and event.get("signal_type") in WATCH_UNTIL_FAIL_SIGNALS
+
+
+def _crossing_bar(bars: list, hit: dict) -> Optional[dict]:
+    """The completed bar on which a breakout/breakdown crossed its level, from
+    the detector's own crossing date. None if that bar is not in `bars`."""
+    date = str((hit or {}).get("date") or "").strip()
+    if not date:
+        return None
+    for bar in reversed(bars or []):
+        t = _bar_time(bar)
+        if t == date or (len(date) == 10 and t[:10] == date):
+            return bar
+    return None
 
 
 class WeisRadarLifecycleTracker:
@@ -215,11 +246,13 @@ class WeisRadarLifecycleTracker:
     for at least one completed scan and later reappears, it may open a new event.
     """
 
-    def __init__(self, redis_client, timeframe: str, scan_id: Optional[str] = None):
+    def __init__(self, redis_client, timeframe: str, scan_id: Optional[str] = None,
+                 state_key: str = WEIS_RADAR_LIFECYCLE_KEY):
         self.redis_client = redis_client
         self.timeframe = str(timeframe or "1Day")
         self.scan_id = str(scan_id or _utc_now_iso())
-        self.state = _load_state(redis_client)
+        self.state_key = state_key
+        self.state = _load_state(redis_client, state_key)
         self.previous_scan_id = self.state.get("last_scan_id")
         self.events: Dict[str, dict] = self.state.setdefault("events", {})
         self.transitions: List[dict] = []
@@ -246,6 +279,10 @@ class WeisRadarLifecycleTracker:
                 continue
             signal = _signal_type(hit)
             if not _signal_is_trigger(signal):
+                continue
+
+            if signal in WATCH_UNTIL_FAIL_SIGNALS:
+                self._register_crossing(symbol, signal, bars, hit, current_bar)
                 continue
 
             # If the exact condition was continuously present on the immediately
@@ -284,6 +321,59 @@ class WeisRadarLifecycleTracker:
             return None
         candidates.sort(key=_event_sort_key, reverse=True)
         return candidates[0]
+
+    def _register_crossing(self, symbol: str, signal: str, bars: list, hit: dict, current_bar: dict) -> None:
+        """One event per actual crossing. The event id comes from the crossing
+        bar, so the same crossing seen on later scans updates its event rather
+        than opening a duplicate, and a genuinely new crossing (for example a
+        second attempt after a failure) opens a new, numbered event."""
+        bar = _crossing_bar(bars, hit) or current_bar
+        event_id = _event_id(symbol, self.timeframe, signal, _bar_time(bar))
+        existing = self.events.get(event_id)
+        if not isinstance(existing, dict):
+            # An open event at the same level is the same attempt, for example
+            # one recorded before crossing-bar ids existed (keyed to the scan
+            # bar that first noticed it). Adopt it rather than duplicate it.
+            existing = self._open_event_at_level(symbol, signal, _float(hit.get("level")))
+        if isinstance(existing, dict):
+            existing["last_seen_scan_id"] = self.scan_id
+            existing["last_seen_at"] = _utc_now_iso()
+            return
+        event = self._new_event(symbol=symbol, signal=signal, bar=bar, hit=hit)
+        if event is None:
+            return
+        event["attempt"] = self._attempt_number(symbol, signal, event.get("structure_level"))
+        self._update_progress(event, _float(event.get("trigger_price")))
+        self.events[event["event_id"]] = event
+        # A crossing first seen some bars after it happened is evaluated
+        # against the completed bars since, so its stage is current today.
+        self._evaluate_event(event, bars)
+
+    def _open_event_at_level(self, symbol: str, signal: str, level: Optional[float]) -> Optional[dict]:
+        if level is None or level <= 0:
+            return None
+        for event in self.events.values():
+            if (isinstance(event, dict) and _is_open(event) and event.get("symbol") == symbol
+                    and event.get("timeframe") == self.timeframe and event.get("signal_type") == signal):
+                other = _float(event.get("structure_level"))
+                if other and abs(other / level - 1.0) <= ATTEMPT_LEVEL_TOLERANCE:
+                    return event
+        return None
+
+    def _attempt_number(self, symbol: str, signal: str, level: Optional[float]) -> int:
+        if level is None or level <= 0:
+            return 1
+        prior = 0
+        for event in self.events.values():
+            if not isinstance(event, dict):
+                continue
+            if (event.get("symbol") != symbol or event.get("timeframe") != self.timeframe
+                    or event.get("signal_type") != signal):
+                continue
+            other = _float(event.get("structure_level"))
+            if other and abs(other / level - 1.0) <= ATTEMPT_LEVEL_TOLERANCE:
+                prior += 1
+        return prior + 1
 
     def _new_event(self, symbol: str, signal: str, bar: dict, hit: dict) -> Optional[dict]:
         direction = _direction_for_signal(signal)
@@ -349,73 +439,93 @@ class WeisRadarLifecycleTracker:
         }
 
     def _evaluate_open_events(self, symbol: str, bars: list) -> None:
-        for event in self.events.values():
+        for event in list(self.events.values()):
             if not isinstance(event, dict):
                 continue
             if event.get("symbol") != symbol or event.get("timeframe") != self.timeframe:
                 continue
-            if event.get("stage") != ACTIVE_STAGE:
+            if not _is_open(event):
+                continue
+            self._evaluate_event(event, bars)
+
+    def _evaluate_event(self, event: dict, bars: list) -> None:
+        baseline = event.get("last_evaluated_bar_time") or event.get("trigger_bar_time")
+        new_bars = [bar for bar in bars if _bar_time(bar) and _is_after(_bar_time(bar), baseline)]
+        if not new_bars:
+            return
+
+        direction = event.get("direction")
+        confirmation = _float(event.get("confirmation_level"))
+        invalidation = _float(event.get("invalidation_level"))
+        if direction not in {"Bullish", "Bearish"} or confirmation is None or invalidation is None:
+            return
+        bullish = direction == "Bullish"
+        watch_after_confirm = event.get("signal_type") in WATCH_UNTIL_FAIL_SIGNALS
+
+        for bar in new_bars:
+            close = _float(bar.get("c"))
+            bar_time = _bar_time(bar)
+            if close is None:
                 continue
 
-            baseline = event.get("last_evaluated_bar_time") or event.get("trigger_bar_time")
-            new_bars = [bar for bar in bars if _bar_time(bar) and _is_after(_bar_time(bar), baseline)]
-            if not new_bars:
-                continue
+            event["last_price"] = close
+            event["last_evaluated_bar_time"] = bar_time
+            event["bars_observed_after_trigger"] = int(event.get("bars_observed_after_trigger") or 0) + 1
+            if watch_after_confirm:
+                self._update_progress(event, close)
 
-            direction = event.get("direction")
-            confirmation = _float(event.get("confirmation_level"))
-            invalidation = _float(event.get("invalidation_level"))
-            if direction not in {"Bullish", "Bearish"} or confirmation is None or invalidation is None:
-                continue
+            failed = close < invalidation if bullish else close > invalidation
+            if failed:
+                was_confirmed = event.get("stage") == "CONFIRMED"
+                if was_confirmed:
+                    event["failed_after_confirmation"] = True
+                word = "fell below" if bullish else "rose above"
+                self._transition(
+                    event,
+                    "INVALIDATED",
+                    bar_time,
+                    close,
+                    f"Completed-bar close {close:.4f} {word} invalidation {invalidation:.4f}"
+                    + (" after confirmation." if was_confirmed else "."),
+                )
+                break
 
-            for bar in new_bars:
-                close = _float(bar.get("c"))
-                bar_time = _bar_time(bar)
-                if close is None:
-                    continue
+            if event.get("stage") == ACTIVE_STAGE:
+                confirmed = close > confirmation if bullish else close < confirmation
+                if confirmed:
+                    word = "exceeded" if bullish else "fell below"
+                    event["confirmed_bar_time"] = bar_time
+                    event["confirmed_price"] = close
+                    self._transition(
+                        event,
+                        "CONFIRMED",
+                        bar_time,
+                        close,
+                        f"Completed-bar close {close:.4f} {word} confirmation {confirmation:.4f}."
+                        + (" Still watched until a close back through the level." if watch_after_confirm else ""),
+                    )
+                    if not watch_after_confirm:
+                        break
 
-                event["last_price"] = close
-                event["last_evaluated_bar_time"] = bar_time
-                event["bars_observed_after_trigger"] = int(event.get("bars_observed_after_trigger") or 0) + 1
-
-                if direction == "Bullish":
-                    if close < invalidation:
-                        self._transition(
-                            event,
-                            "INVALIDATED",
-                            bar_time,
-                            close,
-                            f"Completed-bar close {close:.4f} fell below invalidation {invalidation:.4f}.",
-                        )
-                        break
-                    if close > confirmation:
-                        self._transition(
-                            event,
-                            "CONFIRMED",
-                            bar_time,
-                            close,
-                            f"Completed-bar close {close:.4f} exceeded confirmation {confirmation:.4f}.",
-                        )
-                        break
-                else:
-                    if close > invalidation:
-                        self._transition(
-                            event,
-                            "INVALIDATED",
-                            bar_time,
-                            close,
-                            f"Completed-bar close {close:.4f} rose above invalidation {invalidation:.4f}.",
-                        )
-                        break
-                    if close < confirmation:
-                        self._transition(
-                            event,
-                            "CONFIRMED",
-                            bar_time,
-                            close,
-                            f"Completed-bar close {close:.4f} fell below confirmation {confirmation:.4f}.",
-                        )
-                        break
+    @staticmethod
+    def _update_progress(event: dict, close: Optional[float]) -> None:
+        """Move since the crossing, and the best close in the break's direction."""
+        if close is None:
+            return
+        bullish = event.get("direction") == "Bullish"
+        trigger = _float(event.get("trigger_price"))
+        level = _float(event.get("structure_level")) or _float(event.get("invalidation_level"))
+        best = _float(event.get("best_close"))
+        if best is None or (close > best if bullish else close < best):
+            event["best_close"] = close
+            best = close
+        if trigger:
+            sign = 1 if bullish else -1
+            event["pct_since_trigger"] = round(sign * (close / trigger - 1) * 100, 2)
+            event["best_pct_since_trigger"] = round(sign * (best / trigger - 1) * 100, 2)
+        if level:
+            sign = 1 if bullish else -1
+            event["pct_beyond_level"] = round(sign * (close / level - 1) * 100, 2)
 
     def _transition(self, event: dict, stage: str, bar_time: str, price: float, reason: str) -> None:
         if stage not in TERMINAL_STAGES:
@@ -437,7 +547,7 @@ class WeisRadarLifecycleTracker:
         if self.redis_client:
             try:
                 self.redis_client.set(
-                    WEIS_RADAR_LIFECYCLE_KEY,
+                    self.state_key,
                     json.dumps(self.state, separators=(",", ":")),
                 )
             except Exception:
