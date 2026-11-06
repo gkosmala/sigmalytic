@@ -3049,9 +3049,23 @@ def weis_radar_chart_data(symbol: str, timeframe: str = "1Day", limit: int = 252
         except Exception:
             pass  # weis_lines_out stays None -- chart still renders fine without it
 
+        # ADDED (2026-11-06): stair-step trend boxes for the current breakout
+        # or breakdown (backend/trend_boxes.py, same rules as the daily report
+        # and the radar). None when there is no active crossing.
+        trend_boxes_out = None
+        try:
+            from backend.trend_boxes import boxes_for_crossing
+            for h in hits:
+                if h.get("type") in ("BREAKOUT", "BREAKDOWN"):
+                    trend_boxes_out = boxes_for_crossing(bars_out, h, date_of=lambda b: str(b["t"]))
+                    if trend_boxes_out:
+                        break
+        except Exception:
+            trend_boxes_out = None
+
         return {"ok": True, "symbol": sym, "timeframe": timeframe, "bars": bars_out, "hits": hits,
                 "call_wall": call_wall, "put_wall": put_wall, "gamma_flip": gamma_flip,
-                "weis_lines": weis_lines_out}
+                "weis_lines": weis_lines_out, "trend_boxes": trend_boxes_out}
     except Exception as e:
         return {"ok": False, "error": str(e)[:300]}
 
