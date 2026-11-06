@@ -505,10 +505,6 @@ def _run_full_universe_renko_weis_scan() -> List[Dict[str, Any]]:
             results.append(result)
         except Exception:
             continue
-    try:
-        tracker.save()
-    except Exception:
-        pass
     by_symbol: Dict[str, List[Dict[str, Any]]] = {}
     for event in tracker.events.values():
         if isinstance(event, dict) and event.get("signal_type") in CROSSING_SIGNALS:
@@ -517,6 +513,10 @@ def _run_full_universe_renko_weis_scan() -> List[Dict[str, Any]]:
         result["lifecycle"] = _report_lifecycle_events(by_symbol.get(result.get("symbol"), []),
                                                        result.get("last_bar_date"))
     _enrich_crossing_rows(results, daily_bars, fetch_bars_batch, trim_incomplete_bar)
+    try:
+        tracker.save()   # after enrichment, so a trend start date found tonight is kept
+    except Exception:
+        pass
     return results
 
 
@@ -527,6 +527,24 @@ def _daily_change_by_date(bars: List[Dict[str, Any]]) -> Dict[str, float]:
         if p and c is not None and d:
             out[d] = (c / p - 1) * 100
     return out
+
+
+TREND_AVERAGE_BARS = 10
+TREND_MIN_CHANGE_PCT = 2.0
+
+
+def _trend_gate(closes: List[float], i: int, bullish: bool) -> bool:
+    """Trend gate on bar i: close beyond its 10-day average, the average moving
+    the break's way, and the 10-day change beyond +2% (or -2% for breakdowns)."""
+    n = TREND_AVERAGE_BARS
+    if i < n or i >= len(closes):
+        return False
+    avg = sum(closes[i - n + 1:i + 1]) / n
+    prev_avg = sum(closes[i - n:i]) / n
+    change = (closes[i] / closes[i - n] - 1) * 100 if closes[i - n] else 0.0
+    if bullish:
+        return closes[i] > avg and avg > prev_avg and change > TREND_MIN_CHANGE_PCT
+    return closes[i] < avg and avg < prev_avg and change < -TREND_MIN_CHANGE_PCT
 
 
 def _four_hour_alignment(bars: List[Dict[str, Any]], level: Optional[float], bullish: bool) -> str:
@@ -587,6 +605,18 @@ def _enrich_crossing_rows(results, daily_bars, fetch_bars_batch, trim_incomplete
             ctx["four_hour"] = _four_hour_alignment(four_hour.get(result["symbol"]),
                                                     _safe_float(event.get("structure_level")),
                                                     event.get("direction") == "Bullish")
+            # Day count: the crossing day is day 1.
+            ctx["day"] = int(event.get("bars_observed_after_trigger") or 0) + 1
+            # Trend: blank until the gate is first crossed on or after the
+            # crossing day; then kept (stored on the event) for this attempt.
+            if event.get("stage") in ("TRIGGERED", "CONFIRMED") and not event.get("trend_since") and i is not None:
+                closes = [_safe_float(b.get("c")) for b in bars]
+                if all(c is not None for c in closes):
+                    for j in range(i, len(closes)):
+                        if _trend_gate(closes, j, event.get("direction") == "Bullish"):
+                            event["trend_since"] = _bar_market_date(bars[j])
+                            event["trend_since_day"] = j - i + 1
+                            break
             event["report_context"] = ctx
 
 
@@ -625,7 +655,10 @@ def _superseded(event: Dict[str, Any], events: List[Dict[str, Any]]) -> bool:
 
 def _pct(value: Any, signed: bool = True) -> str:
     v = _safe_float(value)
-    return "n/a" if v is None else (f"{v:+.2f}%" if signed else f"{v:.2f}%")
+    if v is None:
+        return "n/a"
+    v = 0.0 if abs(v) < 0.005 else v   # no "-0.00%"
+    return f"{v:+.2f}%" if signed else f"{v:.2f}%"
 
 
 def _lifecycle_sections(rows: List[Dict[str, Any]], report_date: str, signal: str) -> Dict[str, List[Dict[str, Any]]]:
@@ -667,7 +700,12 @@ def _lifecycle_sections(rows: List[Dict[str, Any]], report_date: str, signal: st
                 status = f"Needs a close {confirm_word} {_fmt(event.get('confirmation_level'), 2)} to confirm"
             out[bucket].append(dict(
                 symbol=row.get("symbol", ""),
-                direction="Bullish (long)" if bullish else "Bearish (short)",
+                direction=(f"{'Bullish breakout' if bullish else 'Bearish breakdown'}, day {ctx.get('day') or sessions + 1}"),
+                # Sideways with its day count until the trend gate is first
+                # crossed; then trending, with the date and day it began.
+                trend=("" if stage == "INVALIDATED" else
+                       f"Trending {'bullish' if bullish else 'bearish'} since {event['trend_since']} (day {event.get('trend_since_day')})"
+                       if event.get("trend_since") else f"Sideways, day {ctx.get('day') or sessions + 1}"),
                 close=price,
                 sector=row.get("sector") or "—",
                 level=level,
@@ -692,7 +730,7 @@ def _lifecycle_sections(rows: List[Dict[str, Any]], report_date: str, signal: st
     return out
 
 
-_CROSSING_HEADERS = ["Symbol", "Direction", "Close", "Sector", "Level (attempt)", "Crossed",
+_CROSSING_HEADERS = ["Symbol", "Breakout / breakdown", "Close", "Sector", "Trend", "Level (attempt)", "Crossed",
                      "Today (vs S&P)", "Crossing day vs S&P", "Beyond level", "Since crossing (best)",
                      "Crossing-day volume", "4-hour", "Status"]
 
@@ -701,7 +739,8 @@ def _crossing_row(i: Dict[str, Any]) -> str:
     crossed = i["crossed"] + (f" ({i['sessions']} sessions ago)" if i["sessions"] > 1
                               else " (1 session ago)" if i["sessions"] == 1 else "")
     volume = "n/a" if i["rel_volume"] is None else f"{float(i['rel_volume']):.1f}x 20-day avg"
-    cells = [i["direction"], _fmt(i["close"], 2), i["sector"], f"{_fmt(i['level'], 2)} (#{i['attempt']})",
+    cells = [i["direction"], _fmt(i["close"], 2), i["sector"], i.get("trend") or "",
+             f"{_fmt(i['level'], 2)} (#{i['attempt']})",
              crossed, f"{_pct(i['today'])} ({_pct(i['today_vs_spy'])})", _pct(i["crossing_vs_spy"]),
              _pct(i["beyond"]), f"{_pct(i['since'])} ({_pct(i['best'])})", volume, i["four_hour"], i["status"]]
     return (f"<tr><td><strong>{_esc(i['symbol'])}</strong></td>"
@@ -872,6 +911,14 @@ def _crossing_summary_html(rows: List[Dict[str, Any]], report_date: str,
     count_rows = "".join(
         f"<tr><td>{label}</td><td class='num'>{len(outs['BREAKOUT'][k])}</td><td class='num'>{len(outs['BREAKDOWN'][k])}</td></tr>"
         for k, label in stages)
+    trending = [sum(1 for k in ("new", "confirmed", "holding") for i in outs[sig][k]
+                    if str(i.get("trend")).startswith("Trending")) for sig in CROSSING_SIGNALS]
+    sideways = [sum(1 for k in ("new", "confirmed", "holding") for i in outs[sig][k]
+                    if str(i.get("trend")).startswith("Sideways")) for sig in CROSSING_SIGNALS]
+    count_rows += (f"<tr><td><strong>Active and trending</strong></td><td class='num'>{trending[0]}</td>"
+                   f"<td class='num'>{trending[1]}</td></tr>"
+                   f"<tr><td><strong>Active and sideways</strong></td><td class='num'>{sideways[0]}</td>"
+                   f"<td class='num'>{sideways[1]}</td></tr>")
 
     by_date: Dict[str, Dict[str, Any]] = {}
     by_sector: Dict[str, List[int]] = {}
@@ -914,6 +961,10 @@ def _crossing_summary_html(rows: List[Dict[str, Any]], report_date: str,
       <table><thead><tr><th>Crossing date (active)</th><th>Breakouts</th><th>Breakdowns</th><th>S&P 500 that day</th></tr></thead>
       <tbody>{date_rows or "<tr><td colspan='4' class='muted'>None</td></tr>"}</tbody></table>
       {cluster}
+      <p class="note">Each entry is named a bullish breakout or bearish breakdown with its day count (the crossing
+      day is day 1) and keeps that name until a daily close back through the level. Trend shows Sideways with its day
+      count until the trend gate is first crossed: close above its 10-day average, the average rising, and the 10-day change above
+      +2% (for breakdowns: below a falling average and below -2%). It then shows the date the trend began.</p>
       <p class="note">Columns in the lists below: Today (vs S&P) is the day's change and its difference from the
       S&P 500; Crossing day vs S&P is the stock's move on the day it crossed minus the S&P 500's; Beyond level is
       how far the close is past the level in the break's direction; Since crossing (best) is the move from the

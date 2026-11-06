@@ -166,7 +166,7 @@ def test_report_sections_from_lifecycle(monkeypatch):
     assert secs["Breakouts: Holding, Not Yet Confirmed (1)"] == ["SIDE"]
     assert secs["Breakouts: Failed Today (1)"] == ["FAIL"]
     assert "Breakouts and Breakdowns: Summary" in html_doc
-    assert "Failed after confirmation" in html_doc and "Bullish (long)" in html_doc
+    assert "Failed after confirmation" in html_doc and "Bullish breakout, day 1" in html_doc
     assert "Needs a close above 102.00 to confirm" in html_doc
 
 
@@ -209,3 +209,32 @@ def test_adopts_open_event_recorded_before_crossing_bar_ids():
     t = WeisRadarLifecycleTracker(r, "1Day", scan_id="s2")
     t.process_symbol("ABC", bars, [breakout_hit(2)])
     assert len(t.events) == 1
+
+
+
+def test_trend_blank_until_gate_then_dated(monkeypatch):
+    from backend import reports_engine as re_
+    import backend.heatmap_engine as hm
+    monkeypatch.setattr(hm, "_load_sector_lookup", lambda: {"UP": {"sector": "Tech"}})
+    # 25 flat days at 100, breakout on day 26 to 101, then a slow climb.
+    closes = [100.0] * 25 + [101.0, 101.2, 101.4, 101.6, 101.8, 102.0, 102.6, 103.2, 103.8]
+    bars = [{"t": f"2026-09-{d:02d}T04:00:00Z" if d <= 30 else f"2026-10-{d - 30:02d}T04:00:00Z",
+             "o": c, "h": c + 0.2, "l": c - 0.2, "c": c, "v": 1000} for d, c in enumerate(closes, start=1)]
+    def tracked(upto):
+        r = FakeRedis()
+        t = WeisRadarLifecycleTracker(r, "1Day", scan_id="s", state_key=re_.REPORT_LIFECYCLE_KEY)
+        t.process_symbol("UP", bars[:upto], [{"type": "BREAKOUT", "level": 100.5, "date": bars[25]["t"][:10]}])
+        rows = [{"symbol": "UP", "price": closes[upto - 1], "change_pct": 0.1, "last_bar_date": bars[upto - 1]["t"][:10],
+                 "lifecycle": [e for e in t.events.values()]}]
+        re_._enrich_crossing_rows(rows, {"UP": bars[:upto]}, lambda *a, **k: {}, lambda b, tf: b)
+        return rows, rows[0]["lifecycle"][0]
+    rows, e = tracked(30)                      # day 5: gate not crossed (10-day change +1.8%)
+    assert not e.get("trend_since") and e["report_context"]["day"] == 5
+    sec = re_._lifecycle_sections(rows, rows[0]["last_bar_date"], "BREAKOUT")
+    item = (sec["confirmed"] + sec["holding"])[0]
+    assert item["trend"] == "Sideways, day 5" and item["direction"] == "Bullish breakout, day 5"
+    rows, e = tracked(len(bars))               # later: gate crossed
+    assert e["trend_since"] and e["trend_since_day"] >= 6
+    sec = re_._lifecycle_sections(rows, rows[0]["last_bar_date"], "BREAKOUT")
+    item = (sec["confirmed"] + sec["holding"])[0]
+    assert item["trend"].startswith("Trending bullish since ")
