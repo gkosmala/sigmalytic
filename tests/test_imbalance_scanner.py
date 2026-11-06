@@ -1,5 +1,6 @@
 """Imbalance scanner: universe, shadow vs live, cooldown, outcomes, track record, API wiring."""
 import os
+import re
 import sys
 import time
 
@@ -201,14 +202,16 @@ def test_tab_renders_for_admin_and_non_admin(monkeypatch):
     assert "Could not load" in text(tab.build_imbalance_tab({}, admin=True))
 
 
-def test_app_wires_the_imbalance_tab():
+def test_app_wires_imbalance_alerts_into_admin():
     src = open(os.path.join(ROOT, "frontend", "app.py")).read()
-    assert src.count('("imbalance",   "Imbalance Alerts")') == 1
-    assert "'tab-imbalance'" in src and 'Input("tab-imbalance","n_clicks")' in src
-    assert 'elif tab=="imbalance":' in src
+    assert '("imbalance",   "Imbalance Alerts")' not in src and "tab-imbalance" not in src
+    assert "build_imbalance_tab(session=admin_session, admin=True)" in src
     # nav id list and Input list must stay in the same order (index lookup)
-    ids = src[src.index("const buttons = ["):src.index("];", src.index("const buttons = ["))]
-    assert ids.rstrip().endswith("'tab-imbalance'")
+    start = src.index("const buttons = [")
+    ids = re.findall(r"'tab-(\w+)'", src[start:src.index("];", start)])
+    block = src[src.index('Output("s-tab","data"),', start):src.index("prevent_initial_call=True", start)]
+    inputs = re.findall(r'Input\("tab-(\w+)","n_clicks"\)', block)
+    assert ids == inputs
 
 
 def test_imports_the_way_production_does():

@@ -2,15 +2,15 @@
 """
 frontend/imbalance_tab.py
 -------------------------
-Imbalance Alerts tab. While the feature is in testing it is shown to
-administrators only: the recent alert log and the track record (how often
-alerts were right at 1, 3, 5 and 10 trading days). Everyone else sees a short
-"coming soon" note.
+Imbalance Alerts. While the feature is in testing it lives inside the Admin
+tab only (no navigation button): pillar readings, the track record (how often
+alerts were right at 1, 3, 5 and 10 trading days) and the recent alert log.
 
 Plugs into app.py:
   1. from imbalance_tab import build_imbalance_tab
-  2. ALL_TABS: ("imbalance", "Imbalance Alerts")
-  3. render_main: elif tab == "imbalance": main = build_imbalance_tab(session, admin)
+  2. render_main, tab == "admin" (admins only): build_imbalance_tab(session, admin=True)
+  To give it its own tab again later: re-add ("imbalance", "Imbalance Alerts") to
+  ALL_TABS, its button to the s-tab clientside callback, and an elif branch.
 """
 from __future__ import annotations
 
