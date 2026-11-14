@@ -13,6 +13,17 @@ def _chart(n=60, drift=0.3):
             "weis_lines": {"ice_line_level": 108.25}}
 
 
+@pytest.fixture(autouse=True)
+def _no_sitemap(monkeypatch):
+    """Tests never reach the live site: the sitemap fetch fails, so no earlier posts are linked unless a test supplies them."""
+    from backend import publishing_checklist as pc
+    pc._SITEMAP_CACHE.update(at=0.0, urls=[])
+
+    def boom(url):
+        raise ConnectionError("network disabled in tests")
+    monkeypatch.setattr(pc, "_fetch", boom)
+
+
 @pytest.fixture
 def facts():
     return ch.facts_from_chart_data("TEST", _chart())
@@ -40,7 +51,7 @@ def test_template_package_passes_all_checks(facts):
         assert d["chars"] <= d["limit"]
     assert pkg["blog"]["disclaimer"] in pkg["blog"]["html"]
     assert "utm_source=linkedin" in pkg["teasers"]["linkedin"]["text"]
-    assert "utm_source=x" in pkg["teasers"]["x"]["reply"]
+    assert "utm_source=x" in pkg["teasers"]["x"]["text"]      # publishing checklist: direct link in the X post
 
 
 def test_x_link_not_in_main_text(facts):
@@ -85,9 +96,9 @@ def test_ai_blog_clean_is_accepted(facts, monkeypatch):
 
 def test_ai_teaser_failing_checks_falls_back(facts, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
-    monkeypatch.setattr(ch, "ai_teasers", lambda f, b: {"x": {"text": "This will soar, guaranteed!"}})
+    monkeypatch.setattr(ch, "ai_teasers", lambda f, b: {"facebook": {"text": "This will soar, guaranteed!"}})
     t = ch.generate_teasers(facts, ch.template_blog(facts), use_ai=True)
-    assert t["x"]["source"] == "template" and t["x"]["ok"]
+    assert t["facebook"]["source"] == "template" and t["facebook"]["ok"]
 
 
 def test_no_key_uses_template(facts, monkeypatch):
@@ -688,11 +699,11 @@ def test_pattern_names_are_traps():
 def test_teaser_failure_note_gives_the_reason(facts, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
     blog = ch.generate_blog(facts, use_ai=False)
-    too_long = {"text": "x" * 400}
-    monkeypatch.setattr(ch, "ai_teasers", lambda f, b: {"x": too_long})
+    too_long = {"text": "x" * 600}
+    monkeypatch.setattr(ch, "ai_teasers", lambda f, b: {"facebook": too_long})
     out = ch.generate_teasers(facts, blog, use_ai=True)
     note = out["_note"]["note"] if "_note" in out else ""
-    assert "X AI draft failed checks (" in note and "limit is" in note
+    assert "Facebook AI draft failed checks (" in note and "limit is" in note
 
 
 def test_key_levels_use_plain_platform_labels_and_hide_methods(facts, monkeypatch):

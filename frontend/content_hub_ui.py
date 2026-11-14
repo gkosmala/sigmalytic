@@ -126,6 +126,25 @@ def _private_card(p):
     return html.Div(rows, style={"border": f"1px dashed {AMBER}", "borderRadius": "10px", "padding": "10px", "marginTop": "14px"})
 
 
+def render_checklist(pub: dict):
+    """The publishing checklist: automatic checks (✓ / !) and the manual publish-and-distribute steps (→)."""
+    if not pub:
+        return html.Div()
+    n = pub.get("to_fix", 0)
+    rows = [html.Div(f"PUBLISHING CHECKLIST ({n} to fix before publishing)" if n else
+                     "PUBLISHING CHECKLIST (every automatic check passes)",
+                     style={"fontSize": "12px", "fontWeight": "800", "color": WHITE, "marginBottom": "6px"})]
+    for g in pub.get("groups") or []:
+        rows.append(html.Div(g["label"], style={"fontSize": "11px", "fontWeight": "800", "color": MUTED, "margin": "8px 0 3px"}))
+        for i in g["items"]:
+            mark, color = {"ok": ("✓ ", GREEN), "warn": ("! ", AMBER)}.get(i["level"], ("→ ", WHITE))
+            rows.append(html.Div([html.Span(mark, style={"color": color, "fontWeight": "800"}),
+                                  html.Span(i["name"] + ": ", style={"color": WHITE, "fontSize": "12px"}),
+                                  html.Span(i["detail"], style={"color": MUTED, "fontSize": "11px"})],
+                                 style={"marginBottom": "2px"}))
+    return html.Div(rows, style={"border": f"1px solid {BORDER}", "borderRadius": "10px", "padding": "10px", "marginTop": "10px"})
+
+
 def render_package(pkg: dict):
     blog = pkg["blog"]
     prov = {"anthropic": "Claude", "openai": "OpenAI"}.get(pkg.get("ai_provider") or "", "AI")
@@ -146,6 +165,7 @@ def render_package(pkg: dict):
         out.append(html.Div(n, style={"fontSize": "11px", "color": AMBER, "marginBottom": "4px"}))
     for i in pkg.get("blog_issues") or []:
         out.append(html.Div("Blog check: " + i, style={"fontSize": "12px", "color": RED}))
+    out.append(render_checklist(pkg.get("publishing")))
 
     seo = blog.get("seo") or {}
     seo_rows = []
@@ -180,7 +200,8 @@ def render_package(pkg: dict):
         html.Div(seo_rows),
         html.Div("SOCIAL TEASERS", style={"fontSize": "12px", "fontWeight": "800", "color": WHITE, "margin": "18px 0 6px"}),
         html.Div("Drafts only. Nothing is posted. Every link carries tracking tags so you can see which platform "
-                 "sends readers.", style={"fontSize": "11px", "color": MUTED, "marginBottom": "8px"}),
+                 "sends readers. LinkedIn and X follow the publishing checklist: the opening takeaway, three chart "
+                 "levels and a direct link to the article.", style={"fontSize": "11px", "color": MUTED, "marginBottom": "8px"}),
     ]
     for p in ("linkedin", "x", "instagram", "reddit", "pinterest", "facebook", "tiktok"):
         if p in pkg["teasers"]:

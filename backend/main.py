@@ -3095,7 +3095,8 @@ def content_hub_generate(payload: dict, _admin: str = Depends(require_admin)):
     if p.get("reuse") and key in _CONTENT_HUB_REUSE:
         return {**_CONTENT_HUB_REUSE[key], "reused": True}
     try:
-        out = {"ok": True, **content_hub.build_package(symbol, use_ai=bool(p.get("use_ai", True)))}
+        flag = {"flagship": True} if p.get("flagship") else {}
+        out = {"ok": True, **content_hub.build_package(symbol, use_ai=bool(p.get("use_ai", True)), **flag)}
     except Exception as exc:
         return {"ok": False, "error": str(exc)[:300]}
     if len(_CONTENT_HUB_REUSE) > 60:
@@ -3107,6 +3108,26 @@ def content_hub_generate(payload: dict, _admin: str = Depends(require_admin)):
     except Exception:
         pass
     return out
+
+
+@app.post("/api/admin/content-hub/check")
+def content_hub_check(payload: dict, _admin: str = Depends(require_admin)):
+    """
+    Publishing checklist for any post (admin only): paste a blog post or white paper's title and HTML and get the
+    checklist (level-driven headline, two-sentence Bottom Line, chart levels in text, internal links, byline,
+    and the publish/distribute steps). Reads nothing and changes nothing. See backend/publishing_checklist.py.
+    """
+    from backend import publishing_checklist as pc
+
+    p = payload or {}
+    html_text = str(p.get("html") or "")
+    if not html_text.strip():
+        return {"ok": False, "error": "Paste the post's HTML."}
+    if len(html_text) > 400_000:
+        return {"ok": False, "error": "That post is too large to check (over 400,000 characters)."}
+    symbol = str(p.get("symbol") or "").strip().upper()[:10]
+    return {"ok": True, **pc.checklist(str(p.get("title") or "")[:300], html_text, str(p.get("url") or "")[:500],
+                                       symbol, bool(p.get("flagship")))}
 
 
 @app.post("/api/admin/assistant/ask")

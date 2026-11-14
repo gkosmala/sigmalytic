@@ -69,6 +69,11 @@ except Exception:
     build_trade_journal_tab = None
 
 try:
+    from content_hub_ui import render_checklist as _content_hub_checklist
+except Exception:
+    _content_hub_checklist = None
+
+try:
     from content_hub_ui import render_package as _content_hub_render
     from astro_research_ui import render_table as _astro_table, render_report as _astro_run, render_backtest as _astro_bt, render_level_test as _astro_lt
 except Exception:
@@ -5954,9 +5959,48 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             html.Button("Generate drafts", id="content-hub-run-btn", n_clicks=0,
                 style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
                        "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer"}),
+            dcc.Checklist(id="content-hub-flagship", options=[{"label": " Flagship report (pre-market macro or weekly "
+                                                               "white paper): request indexing by hand", "value": "y"}],
+                          value=[], style={"display": "inline-block", "marginLeft": "14px", "fontSize": "11px",
+                                           "color": MUTED}),
         ], style={"marginBottom": "14px"}),
         dcc.Loading(html.Div(id="content-hub-result", style={"fontSize": "12px", "color": WHITE}),
                     type="dot", color=TEAL),
+        html.Details([
+            html.Summary("Check a blog post or white paper against the publishing checklist",
+                         style={"color": WHITE, "fontSize": "12px", "fontWeight": "700", "cursor": "pointer"}),
+            html.Div("Paste the post's HTML (and its headline and ticker if you have them). It is checked for a level-driven "
+                     "headline, a two-sentence Bottom Line, 2-3 level bullets beneath every chart image, 1-2 links to "
+                     "earlier Sigmalytic posts and the standard byline. Nothing is saved or posted.",
+                     style={"fontSize": "11px", "color": MUTED, "margin": "8px 0", "lineHeight": "1.6"}),
+            html.Div([
+                dcc.Input(id="content-hub-check-title", type="text", placeholder="Headline (optional if the HTML has an H1)",
+                          style={**{"width": "160px", "background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}",
+                             "borderRadius": "8px", "padding": "8px 12px", "color": WHITE, "fontSize": "13px",
+                             "marginRight": "8px"}, "width": "420px"}),
+                dcc.Input(id="content-hub-check-symbol", type="text", placeholder="Ticker (optional)", style={"width": "160px", "background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}",
+                             "borderRadius": "8px", "padding": "8px 12px", "color": WHITE, "fontSize": "13px",
+                             "marginRight": "8px"}),
+                dcc.Input(id="content-hub-check-url", type="text", placeholder="Post URL (optional)",
+                          style={**{"width": "160px", "background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}",
+                             "borderRadius": "8px", "padding": "8px 12px", "color": WHITE, "fontSize": "13px",
+                             "marginRight": "8px"}, "width": "300px"}),
+            ], style={"marginBottom": "8px"}),
+            dcc.Textarea(id="content-hub-check-html", placeholder="Paste the post HTML here",
+                         style={"width": "100%", "height": "140px", "background": "rgba(0,0,0,.3)",
+                                "border": f"1px solid {BORDER}", "borderRadius": "8px", "color": WHITE,
+                                "fontSize": "12px", "padding": "8px", "fontFamily": "DM Mono, monospace"}),
+            html.Div([
+                html.Button("Check post", id="content-hub-check-btn", n_clicks=0,
+                            style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
+                                   "padding": "8px 14px", "fontSize": "12px", "fontWeight": "700", "cursor": "pointer"}),
+                dcc.Checklist(id="content-hub-check-flagship", options=[{"label": " Flagship report", "value": "y"}],
+                              value=[], style={"display": "inline-block", "marginLeft": "14px", "fontSize": "11px",
+                                               "color": MUTED}),
+            ], style={"marginTop": "8px"}),
+            dcc.Loading(html.Div(id="content-hub-check-result", style={"fontSize": "12px", "color": WHITE,
+                                                                       "marginTop": "10px"}), type="dot", color=TEAL),
+        ], style={"marginTop": "14px"}),
     ], sx={"marginBottom": "16px"})
 
     # ── AI Sigmalytic Assistant -- plain-English questions answered by Claude from Sigmalytic's own data only. ──
@@ -11690,9 +11734,10 @@ def render_assistant_thread(history):
 @app.callback(Output("content-hub-result", "children"),
               Input("content-hub-run-btn", "n_clicks"),
               State("content-hub-symbol", "value"),
+              State("content-hub-flagship", "value"),
               State("s-session", "data"),
               prevent_initial_call=True)
-def handle_content_hub_generate(n_clicks, symbol, session):
+def handle_content_hub_generate(n_clicks, symbol, flagship, session):
     """Admin-only: asks the backend for a blog + per-platform teaser drafts. Drafts only; nothing is posted."""
     if not symbol or not symbol.strip():
         return "Please enter a symbol."
@@ -11700,7 +11745,7 @@ def handle_content_hub_generate(n_clicks, symbol, session):
         return "Content Hub display module did not import. Check frontend/content_hub_ui.py."
     try:
         r = req.post(f"{BACKEND_HTTP}/api/admin/content-hub/generate",
-                     json={"symbol": symbol.strip().upper(), "use_ai": True},
+                     json={"symbol": symbol.strip().upper(), "use_ai": True, "flagship": "y" in (flagship or [])},
                      headers=_auth_headers(session), timeout=150)
         if r.status_code == 401:
             return "Not signed in, or session expired. Please sign in again."
@@ -11712,6 +11757,40 @@ def handle_content_hub_generate(n_clicks, symbol, session):
         if not payload.get("ok"):
             return f"Could not generate: {payload.get('error', 'unknown error')}"
         return _content_hub_render(payload)
+    except Exception as exc:
+        return f"Could not reach the backend: {exc}"
+
+
+@app.callback(Output("content-hub-check-result", "children"),
+              Input("content-hub-check-btn", "n_clicks"),
+              State("content-hub-check-title", "value"),
+              State("content-hub-check-symbol", "value"),
+              State("content-hub-check-url", "value"),
+              State("content-hub-check-html", "value"),
+              State("content-hub-check-flagship", "value"),
+              State("s-session", "data"),
+              prevent_initial_call=True)
+def handle_content_hub_check(n_clicks, title, symbol, url, html_text, flagship, session):
+    """Admin-only: runs the publishing checklist on a pasted blog post or white paper. Nothing is saved or posted."""
+    if not (html_text or "").strip():
+        return "Paste the post's HTML first."
+    if _content_hub_checklist is None:
+        return "Content Hub display module did not import. Check frontend/content_hub_ui.py."
+    try:
+        r = req.post(f"{BACKEND_HTTP}/api/admin/content-hub/check",
+                     json={"title": title or "", "symbol": (symbol or "").strip().upper(), "url": url or "",
+                           "html": html_text, "flagship": "y" in (flagship or [])},
+                     headers=_auth_headers(session), timeout=30)
+        if r.status_code == 401:
+            return "Not signed in, or session expired. Please sign in again."
+        if r.status_code == 403:
+            return "Admin access only."
+        if not r.ok:
+            return f"Could not check (error {r.status_code}): {r.text[:200]}"
+        payload = r.json()
+        if not payload.get("ok"):
+            return f"Could not check: {payload.get('error', 'unknown error')}"
+        return _content_hub_checklist(payload)
     except Exception as exc:
         return f"Could not reach the backend: {exc}"
 

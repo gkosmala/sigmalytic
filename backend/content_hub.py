@@ -59,7 +59,8 @@ _BANNED_RE = re.compile("|".join(f"(?:{p})" for p in BANNED_PATTERNS), re.IGNORE
 PLATFORM_RULES: Dict[str, Dict[str, Any]] = {
     "linkedin": {"label": "LinkedIn", "max_chars": 1300, "max_hashtags": 3, "link": "end of post or first comment",
                  "image": "1200x627 chart image (or 1080x1080)"},
-    "x": {"label": "X", "max_chars": 280, "max_hashtags": 2, "link": "in a reply (link posts cost far more via the API)",
+    "x": {"label": "X", "max_chars": 280, "max_hashtags": 2,
+          "link": "in the post (publishing checklist: direct link back to the article)",
           "image": "1600x900 chart image", "link_weight": 23},
     "instagram": {"label": "Instagram", "max_chars": 2200, "max_hashtags": 5,
                   "link": "link in bio (captions are not clickable)", "image": "1080x1350 (4:5) chart image"},
@@ -519,7 +520,7 @@ def validate_teaser(platform: str, draft: Dict[str, Any], facts: Optional[Dict[s
     banned = find_banned_phrases(" ".join([text, title or "", draft.get("reply") or ""]))
     if banned:
         issues.append("Advice/promise wording: " + ", ".join(banned))
-    if platform in ("x", "instagram", "reddit", "tiktok") and re.search(r"https?://", text):
+    if platform in ("instagram", "reddit", "tiktok") and re.search(r"https?://", text):
         issues.append("Link is in the main text; this platform wants it elsewhere (see link placement).")
     if facts is not None:
         bad = numbers_trace_to_facts(" ".join([text, title or ""]), facts)
@@ -619,7 +620,8 @@ def _norm_private(p: Any) -> Dict[str, Any]:
 def template_blog(f: Dict[str, Any]) -> Dict[str, Any]:
     s, name = f["symbol"], f["symbol"]
     trend = _trend_word(f)
-    title = f"{s} Market Structure: Price {trend} its 20-day average at {_usd(f['last_close'])}"
+    from backend import publishing_checklist as pc
+    title = pc.template_headline(f)
     meta = (f"{s} {_verb(f)} {_usd(f['last_close'])} ({_sgn(f['change_1d_pct'])} on the day), "
             f"{_sgn(f['from_high_pct'])} from its 52-week high. Wyckoff/Weis pattern read, key levels and volume from Sigmalytic.")[:158]
     sections: List[Dict[str, str]] = []
@@ -678,8 +680,12 @@ def _paras(text: str) -> List[str]:
 
 
 def _render_blog(f: Dict[str, Any], blog: Dict[str, Any]) -> Dict[str, Any]:
+    from backend import publishing_checklist as pc
     url = blog_url(f["symbol"], f["as_of"])
     esc = _html.escape
+    posts = blog.get("related") or []
+    bottom = blog.get("bottom_line") or ""
+    bullets = blog.get("chart_bullets") or []
     year = (f.get("as_of") or f.get("generated_at") or "")[:4] or str(datetime.now(timezone.utc).year)
     summary = blog.get("summary") or _template_summary(f)
     news = blog.get("news") or {}
@@ -709,17 +715,24 @@ def _render_blog(f: Dict[str, Any], blog: Dict[str, Any]) -> Dict[str, Any]:
             elif "\n" not in t and level_line.match(t):
                 out.append(f"<p><strong>{esc(t)}</strong></p>")
             else:
-                out.append(f"<p>{esc(t)}</p>")
+                out.append(f"<p>{pc.expand_links(esc(t), posts, 'html')}</p>")
         return "\n".join(out)
 
-    body_html = "".join(f"<h2>{esc(s['heading'])}</h2>\n{para_html(s)}\n" for s in sections)
+    # Chart image goes directly above the plain-text levels it shows (publishing checklist 1c).
+    chart_html = ("<!-- chart -->\n<!-- Upload the chart image here, directly above these bullets "
+                  "(download it from the Content Hub's share image). -->\n<p><strong>Levels shown in the chart:</strong></p>\n"
+                  "<ul>" + "".join(f"<li>{esc(b)}</li>" for b in bullets) + "</ul>\n") if bullets else ""
+    chart_md = ("**Levels shown in the chart:**\n\n" + "\n".join(f"- {b}" for b in bullets) + "\n\n") if bullets else ""
+    body_html = "".join(f"<h2>{esc(s['heading'])}</h2>\n{para_html(s)}\n" + (chart_html if i == 0 else "")
+                        for i, s in enumerate(sections))
     attr = attribution_text().split("\n\n")
     src_html = f"<li>{esc(DATA_SOURCE)}: market data used for this report.</li>" + "".join(
         f"<li><a href=\"{esc(x['url'])}\" rel=\"nofollow noopener\">{esc(x['title'])}</a></li>" for x in sources)
     html_doc = (
         f"<!-- Paste into the Research & Intelligence page. Canonical: {url} -->\n"
         f"<article class=\"sigmalytic-research\">\n<h1>{esc(blog['title'])}</h1>\n"
-        f"<p class=\"byline\">Sigmalytic Quant Corporation Market Structure Report<br>{esc(dates)}</p>\n{body_html}"
+        f"<p class=\"byline\">{pc.byline_html()}<br>Sigmalytic Quant Corporation Market Structure Report<br>{esc(dates)}</p>\n"
+        + (f"<p class=\"bottom-line\"><strong>Bottom Line:</strong> {esc(bottom)}</p>\n" if bottom else "") + f"{body_html}"
         f"<p><strong>{esc(TAGLINES[0])}</strong><br>{esc(TAGLINES[1])}</p>\n"
         f"<p><a href=\"{SITE_LINK_HREF}\">{SITE_LINK_TEXT}</a></p>\n"
         f"<h2>Market Data and Attribution</h2>\n" + "".join(f"<p>{esc(x)}</p>\n" for x in attr) +
@@ -732,15 +745,23 @@ def _render_blog(f: Dict[str, Any], blog: Dict[str, Any]) -> Dict[str, Any]:
             ps = [("**" + t.split(": ", 1)[0] + ":** " + t.split(": ", 1)[1]) if ": " in t else t for t in _paras(sec["body"])]
             md_parts.append(f"## {sec['heading']}\n\n" + "\n\n".join(ps))
         else:
-            md_parts.append(f"## {sec['heading']}\n\n{sec['body']}")
-    md = (f"# {blog['title']}\n\nSigmalytic Quant Corporation Market Structure Report  \n{dates}\n\n" + "\n\n".join(md_parts) +
+            md_parts.append(f"## {sec['heading']}\n\n{pc.expand_links(sec['body'], posts, 'md')}")
+    if chart_md and md_parts:
+        md_parts[0] += "\n\n" + chart_md.rstrip()
+    byline_md = (f"By the [{pc.BYLINE_TEAM}]({pc.SITE_URL}) | [Methodology & Editorial Standards]({pc.METHODOLOGY_URL})  \n"
+                 "Sigmalytic Quant Corporation Market Structure Report  \n")
+    md = (f"# {blog['title']}\n\n{byline_md}{dates}\n\n" + (f"**Bottom Line:** {bottom}\n\n" if bottom else "")
+          + "\n\n".join(md_parts) +
           f"\n\n**{TAGLINES[0]}**  \n{TAGLINES[1]}\n\n[{SITE_LINK_TEXT}]({SITE_LINK_HREF})\n\n"
           "## Market Data and Attribution\n\n" + "\n\n".join(attr) +
           f"\n\n## Reference Sources\n\n- {DATA_SOURCE}: market data used for this report.\n"
           + "".join(f"- [{x['title']}]({x['url']})\n" for x in sources) + f"\n{copyright_line}\n\n*{DISCLAIMER}*\n")
     from backend.content_seo import build_seo
     # Word and section counts for SEO cover the analysis and news only, not the summary or boilerplate.
-    seo = build_seo(f, {**blog, "sections": [x for x in sections if x["heading"] != "Sigmalytic Summary"]}, url, SITE_URL, BLOG_PATH)
+    seo = build_seo(f, {**blog, "sections": [x for x in sections if x["heading"] != "Sigmalytic Summary"],
+                        "image_alt": f"{f['symbol']} daily chart, data as of {f['as_of']}. " + " ".join(bullets),
+                        "internal_links": len({m for x in sections for m in pc.link_markers(x['body'])}),
+                        "related_error": blog.get("related_error")}, url, SITE_URL, BLOG_PATH)
     return {**blog, "sections": sections, "slug": _slug(f["symbol"], f["as_of"]), "url": url, "html": html_doc,
             "markdown": md, "head_tags": seo["head_tags"], "seo": seo, "disclaimer": DISCLAIMER,
             "copyright": copyright_line, "sources": sources}
@@ -983,6 +1004,14 @@ _BLOG_STYLE = (
 def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, Any]:
     use_search = (WEB_SEARCH_ON and ai_provider() == "anthropic") if web_search is None else web_search
     s = f["symbol"]
+    related = f.get("_related_posts") or []
+    related_rule = (
+        "EARLIER POSTS: these earlier Sigmalytic reports on " + s + " exist: "
+        + "; ".join(f"[[{p['id']}]] = {p['anchor']}" for p in related)
+        + ". In 'Market Structure' or 'What Changed?', write one natural sentence that refers the reader to one of them, "
+        "placing its marker exactly where the link goes, for example 'As noted in [[1]], ...' or 'For the earlier read, "
+        "see [[1]].' Do not describe what the earlier report said; you have not seen it.\n"
+        if related else "")
     news_rule = (
         f"Use web search first. Find developments from the last few days that bear on {s}: US domestic market or economic, "
         "international, geopolitical, and company- or industry-specific. Write one or two sentences for each category you "
@@ -1026,8 +1055,13 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
         "partial session figure alone does not show whether participation is above or below normal for the time of day. "
         "Write no statement about indexes, rates, energy, inflation, the Fed or the wider market outside the sourced news "
         "items; if no news item supports it, leave it out. Write every price with a dollar sign and two decimals. "
-        "The title should be a specific, accurate "
-        "hook, ideally a question that names the symbol and the key level.\n"
+        "HEADLINE: pair the symbol with one concrete price from FACTS.levels and, if it fits, the catalyst, for example "
+        "'NVDA Stock Analysis: Can Buyers Defend $224.00 Support?'. Prefer the form '<SYMBOL> Stock Analysis: <question>'.\n"
+        "BOTTOM LINE: write \"bottom_line\" as exactly two sentences. The first states the exact latest price and the "
+        "current bias (buyer-led, seller-led or balanced, from where price sits against the 20-day average and in today's "
+        "range). The second names the primary invalidation level: one exact price from FACTS.levels and the words "
+        "'invalidation level'. Observations only; no advice.\n"
+        + related_rule +
         "INSTITUTIONAL: set news.institutional only if a search result explicitly reports block orders, dark-pool prints, "
         "institutional accumulation or distribution, or unusual liquidity for this symbol. Never infer institutional "
         "activity from price and volume. If nothing is found, set it to null.\n"
@@ -1037,10 +1071,11 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
         "the first paragraph must name the symbol), "
         "\"news\": {\"us\": {\"text\": str, \"urls\": [str]} | null, \"international\": ..., \"geopolitical\": ..., "
         "\"company\": ..., \"institutional\": ...}, "
+        "\"bottom_line\": str (exactly two sentences), "
         "\"summary\": {\"condition\": str, \"risk\": str, \"strengthen\": str, \"weaken\": str, \"monitor\": str}, "
         "\"image\": {\"view\": str (1-2 sentences, at most 200 characters, the day's overall read), \"volume\": str "
         "(1-2 sentences, at most 200 characters, what volume says about confirmation)}}\n\nFACTS:\n"
-        + json.dumps(f, indent=1))
+        + json.dumps({k: v for k, v in f.items() if not k.startswith("_")}, indent=1))
     try:
         out = _ai_json(_BLOG_STYLE, user, max_tokens=16000, web_search=use_search)
     except Exception as e:
@@ -1051,7 +1086,7 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
             out["_search_unavailable"] = True
         else:
             raise
-    for k in ("title", "meta_description", "sections", "news", "summary", "private", "image"):
+    for k in ("title", "meta_description", "sections", "news", "summary", "private", "image", "bottom_line"):
         if k in out:
             out[k] = _clean_obj(out[k])
     secs = [{"heading": str(x["heading"]), "body": str(x["body"])} for x in (out.get("sections") or [])
@@ -1061,7 +1096,7 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
     return {"title": str(out.get("title") or f"{s} Market Structure Report")[:140],
             "meta_description": str(out.get("meta_description") or "")[:158], "sections": secs,
             "news": out.get("news") or {}, "summary": out.get("summary") or {}, "private": out.get("private") or {},
-            "image": out.get("image") or {},
+            "image": out.get("image") or {}, "bottom_line": str(out.get("bottom_line") or ""),
             "_search_results": out.get("_search_results") or {}, "_search_unavailable": bool(out.get("_search_unavailable")),
             "_recovered": bool(out.get("_recovered")), "_stop": out.get("_stop"), "_thinking": out.get("_thinking") or 0,
             "ai": True}
@@ -1235,15 +1270,55 @@ EXPECTED_SECTIONS = ["Executive Summary", "Market Structure", "What Changed?", "
                      "Participation and Volume", "What Traders Should Watch Next"]
 
 
-def generate_blog(f: Dict[str, Any], use_ai: bool = True) -> Dict[str, Any]:
+def _apply_checklist(f: Dict[str, Any], blog: Dict[str, Any], related: List[Dict[str, Any]], extra: List[str]) -> None:
+    """Publishing-checklist parts the code owns: the two-sentence Bottom Line, the chart-level bullets and the
+    internal links (backend/publishing_checklist.py). Problems are flagged for the editor in `extra`."""
+    from backend import publishing_checklist as pc
+    sym = f["symbol"]
+    bl = format_prices(str(blog.get("bottom_line") or "").strip(), f)
+    why = pc.bottom_line_problems(bl, sym) if bl else ["was not written"]
+    if bl and not why:
+        why = [f"contains numbers not in the data ({', '.join(numbers_trace_to_facts(bl, f))})"] if numbers_trace_to_facts(bl, f) else []
+        why += [f"contains advice wording ({', '.join(find_banned_phrases(bl))})"] if find_banned_phrases(bl) else []
+    if why:
+        if blog.get("ai"):
+            extra.append("Bottom Line " + "; ".join(why) + "; the code-written Bottom Line was used.")
+        bl = pc.template_bottom_line(f)
+    blog["bottom_line"] = bl
+    blog["chart_bullets"] = pc.chart_bullets(f)
+    hp = pc.headline_problems(blog.get("title") or "", sym)
+    if hp and blog.get("ai"):
+        extra.append("Headline rule: the headline " + "; ".join(x for x in hp if "GoDaddy" not in x)
+                     + f". Suggested: \"{pc.template_headline(f)}\"." if any("GoDaddy" not in x for x in hp) else "")
+    ids = {p["id"] for p in related}
+    secs = blog.get("sections") or []
+    used = {m for x in secs for m in pc.link_markers(x.get("body") or "")}
+    for x in secs:  # markers for posts that do not exist are dropped
+        x["body"] = re.sub(r"\s*\[\[(\d)\]\]", lambda m: m.group(0) if int(m.group(1)) in ids else "", x["body"])
+    if related and not (used & ids) and secs:
+        by_head = {x["heading"].strip().lower(): x for x in secs}
+        target = by_head.get("what changed?") or by_head.get("market structure") or secs[min(1, len(secs) - 1)]
+        target["body"] = target["body"].rstrip() + "\n\nFor the earlier read, see [[1]]."
+    blog["related"] = related
+
+
+def generate_blog(f: Dict[str, Any], use_ai: bool = True, related: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Paid AI output is never thrown away: problems are flagged for the editor, damaged replies are repaired,
     and a reply that cannot be read at all is handed back as raw text."""
+    from backend import publishing_checklist as pc
+    if related is None:
+        related = pc.related_posts(f["symbol"], exclude_url=blog_url(f["symbol"], f["as_of"]))
+    posts = related.get("posts") or []
     note = None
     blog = None
     raw_ai_text = None
     if use_ai and ai_available():
         try:
-            cand = ai_blog(f)
+            f["_related_posts"] = posts
+            try:
+                cand = ai_blog(f)
+            finally:
+                f.pop("_related_posts", None)
             if not cand.get("meta_description"):
                 cand["meta_description"] = template_blog(f)["meta_description"]
             summary = {k: str((cand.get("summary") or {}).get(k) or "").strip() for k, _ in SUMMARY_LABELS}
@@ -1306,7 +1381,8 @@ def generate_blog(f: Dict[str, Any], use_ai: bool = True) -> Dict[str, Any]:
                 extra.append("News left out: " + "; ".join(dropped) + ".")
             if ai_provider() == "openai":
                 extra.append("Web search is only wired for Anthropic; no news sections were written in this run.")
-            note = " ".join(extra) or None
+            _apply_checklist(f, cand, posts, extra)
+            note = " ".join(x for x in extra if x) or None
             blog = cand
         except Exception as e:
             note = f"AI reply could not be used ({str(e)[:140]}); template used."
@@ -1317,7 +1393,10 @@ def generate_blog(f: Dict[str, Any], use_ai: bool = True) -> Dict[str, Any]:
         note = "No AI key set (ANTHROPIC_API_KEY or OPENAI_API_KEY); template draft used."
     if blog is None:
         blog = template_blog(f)
+        _apply_checklist(f, blog, posts, [])
         blog["guarded_text"] = _guarded_text(blog["title"], blog["meta_description"], blog["sections"], blog["summary"])
+    blog["guarded_text"] = " ".join([blog.get("guarded_text") or "", blog.get("bottom_line") or ""] + blog.get("chart_bullets", []))
+    blog["related_error"] = related.get("error")
     out = _render_blog(f, blog)
     out["note"] = note
     if raw_ai_text:
@@ -1375,16 +1454,36 @@ def template_teasers(f: Dict[str, Any], blog: Dict[str, Any]) -> Dict[str, Dict[
     return out
 
 
+def checklist_teasers(f: Dict[str, Any], blog: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """LinkedIn and X drafts per the publishing checklist (3c): the opening takeaway, three chart levels and a direct
+    link back to the article. Written by code from the Bottom Line and chart bullets, so every number is checked."""
+    from backend import publishing_checklist as pc
+    s, asof = f["symbol"], f["as_of"]
+    bl = blog.get("bottom_line") or pc.template_bottom_line(f)
+    bullets = (blog.get("chart_bullets") or pc.chart_bullets(f))[:3]
+    li_url, x_url = tracked_url("linkedin", s, asof), tracked_url("x", s, asof)
+    li = (f"{bl}\n\n" + "\n".join(f"• {b}" for b in bullets) + f"\n\nRead the full analysis: {li_url}\n\n"
+          f"{SHORT_DISCLAIMER}\n\n{_tags(f, 3)}")
+    short = pc.short_bullets(f)
+    lead = f"${s} {_usd(f['last_close'])}: {pc.bias(f)} read."
+    x = ""
+    for n in (3, 2, 1):  # drop bullets, never the link or the disclaimer, until it fits
+        x = f"{lead}\n" + "\n".join(f"• {b}" for b in short[:n]) + f"\n{x_url}\n{SHORT_DISCLAIMER}"
+        if weighted_len("x", x) <= PLATFORM_RULES["x"]["max_chars"]:
+            break
+    return {"linkedin": {"text": li}, "x": {"text": x}}
+
+
 def ai_teasers(f: Dict[str, Any], blog: Dict[str, Any]) -> Dict[str, Any]:
     rules = {p: {k: PLATFORM_RULES[p][k] for k in ("max_chars", "max_hashtags", "link") if k in PLATFORM_RULES[p]}
-             for p in PLATFORM_ORDER}
+             for p in PLATFORM_ORDER if p not in CHECKLIST_PLATFORMS}
     user = (
         "Write one social teaser per platform for this blog post. Each teaser must make the reader curious about the "
         "full post, state one concrete data point, and stay inside the platform's limits (characters include everything). "
         f"End every text with: {SHORT_DISCLAIMER}\n"
         "Do NOT put URLs in any text; links are added separately. Use at most the allowed hashtags. "
         "The Instagram caption has no clickable link: end its body with 'link in bio' before the disclaimer.\n"
-        'Return JSON: {"linkedin": {"text"}, "x": {"text", "reply"}, "instagram": {"text"}, "reddit": {"title", "text", "reply"}, '
+        'Return JSON: {"instagram": {"text"}, "reddit": {"title", "text", "reply"}, '
         '"pinterest": {"title", "text"}, "facebook": {"text"}, "tiktok": {"text", "video_script": [str]}}\n\n'
         f"PLATFORM RULES:\n{json.dumps(rules, indent=1)}\n\nBLOG TITLE: {blog['title']}\n\nFACTS:\n"
         f"{json.dumps({k: v for k, v in f.items() if k != 'timeframes'}, indent=1)}")
@@ -1407,8 +1506,12 @@ def _attach_links(f: Dict[str, Any], plat: str, d: Dict[str, Any]) -> Dict[str, 
     return d
 
 
+CHECKLIST_PLATFORMS = ("linkedin", "x")
+
+
 def generate_teasers(f: Dict[str, Any], blog: Dict[str, Any], use_ai: bool = True) -> Dict[str, Dict[str, Any]]:
     base = template_teasers(f, blog)
+    base.update(checklist_teasers(f, blog))
     ai: Dict[str, Any] = {}
     note = None
     if use_ai and ai_available():
@@ -1418,8 +1521,8 @@ def generate_teasers(f: Dict[str, Any], blog: Dict[str, Any], use_ai: bool = Tru
             note = f"AI unavailable ({str(e)[:100]}); templates used."
     result: Dict[str, Dict[str, Any]] = {}
     for p in PLATFORM_ORDER:
-        draft, source = base[p], "template"
-        cand = ai.get(p) if isinstance(ai, dict) else None
+        draft, source = base[p], ("checklist" if p in CHECKLIST_PLATFORMS else "template")
+        cand = ai.get(p) if isinstance(ai, dict) and p not in CHECKLIST_PLATFORMS else None
         if isinstance(cand, dict) and cand.get("text"):
             merged = _attach_links(f, p, {k: cand[k] for k in cand if isinstance(cand[k], (str, list))})
             problems = validate_teaser(p, merged, f)
@@ -1440,13 +1543,25 @@ def generate_teasers(f: Dict[str, Any], blog: Dict[str, Any], use_ai: bool = Tru
 
 # ───────────────────────────── entry point ─────────────────────────────
 
-def build_package(symbol: str, use_ai: bool = True, facts: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def build_package(symbol: str, use_ai: bool = True, facts: Optional[Dict[str, Any]] = None,
+                  flagship: bool = False) -> Dict[str, Any]:
     log: List[Dict[str, Any]] = []
     token = _USAGE.set(log)
     try:
-        return _build_package(symbol, use_ai, facts, log)
+        pkg = _build_package(symbol, use_ai, facts, log)
     finally:
         _USAGE.reset(token)
+    from backend import publishing_checklist as pc
+    blog, t = pkg["blog"], pkg["teasers"]
+    pkg["publishing"] = pc.checklist(blog["title"], blog["html"], blog["url"], pkg["symbol"], flagship,
+                                     linkedin_text=(t.get("linkedin") or {}).get("text", ""),
+                                     x_text=(t.get("x") or {}).get("text", ""))
+    if blog.get("related_error"):
+        for g in pkg["publishing"]["groups"]:
+            for i in g["items"]:
+                if i["name"].startswith("Links to") and i["level"] == "warn":
+                    i["detail"] += f" ({blog['related_error']})"
+    return pkg
 
 
 def _build_package(symbol: str, use_ai: bool, facts: Optional[Dict[str, Any]], log: List[Dict[str, Any]]) -> Dict[str, Any]:

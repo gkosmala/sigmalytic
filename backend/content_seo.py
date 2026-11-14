@@ -72,7 +72,8 @@ def build_jsonld(symbol: str, headline: str, description: str, url: str, as_of: 
     publisher: Dict[str, Any] = {"@type": "Organization", "name": ORG_NAME, "url": site_url}
     if _env("CONTENT_HUB_LOGO_URL"):
         publisher["logo"] = {"@type": "ImageObject", "url": _env("CONTENT_HUB_LOGO_URL")}
-    author: Dict[str, Any] = {"@type": "Organization", "name": ORG_NAME, "url": site_url}
+    author: Dict[str, Any] = {"@type": "Organization", "name": os.getenv("CONTENT_HUB_BYLINE_TEAM", "Sigmalytic Quant Research Team"),
+                              "url": site_url}
     if _env("CONTENT_HUB_AUTHOR_URL"):
         author = {"@type": "Person", "name": _env("CONTENT_HUB_AUTHOR_NAME") or ORG_NAME, "url": _env("CONTENT_HUB_AUTHOR_URL")}
     article: Dict[str, Any] = {
@@ -112,7 +113,7 @@ def build_seo(facts: Dict[str, Any], blog: Dict[str, Any], url: str, site_url: s
     title_tag = pick_title_tag(symbol, blog["title"], date_label)
     description = fit_description(blog["meta_description"], symbol)
     image = _env("CONTENT_HUB_OG_IMAGE")
-    image_alt = f"{symbol} price chart with Wyckoff and Weis pattern markers, data as of {as_of}"
+    image_alt = blog.get("image_alt") or f"{symbol} price chart with Wyckoff and Weis pattern markers, data as of {as_of}"
     keywords = [f"{symbol} stock analysis", f"{symbol} technical analysis", f"{symbol} Wyckoff",
                 f"{symbol} market structure", "Weis wave"]
     jsonld = build_jsonld(symbol, blog["title"], description, url, as_of, site_url, blog_path, image, keywords)
@@ -173,9 +174,11 @@ def build_seo(facts: Dict[str, Any], blog: Dict[str, Any], url: str, site_url: s
          "Using the company as author. For finance content Google weighs a named, credentialed author; "
          "set CONTENT_HUB_AUTHOR_NAME and CONTENT_HUB_AUTHOR_URL (a bio page)."},
         {"name": "Disclaimer on the page", "level": "ok" if disclaimer_present else "warn", "detail": "included"},
-        {"name": "Internal links to related research", "level": "warn",
-         "detail": "Add links from this post to related research pages, and from your Research & Intelligence index "
-                   "and homepage to this post."},
+        {"name": "Internal links to related research", "level": "ok" if blog.get("internal_links") else "warn",
+         "detail": (f"{blog.get('internal_links')} link(s) to earlier posts on {symbol}, read from sitemap.blog.xml"
+                    if blog.get("internal_links") else
+                    f"No earlier {symbol} post linked ({blog.get('related_error') or 'none found'}). Add a link to a recent "
+                    "post on the same ticker by hand.")},
     ]
     return {"title_tag": title_tag, "meta_description": description, "head_tags": "\n".join(tags), "jsonld": jsonld,
             "checks": checks, "warnings": sum(1 for c in checks if c["level"] != "ok"), "word_count": words,
