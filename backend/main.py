@@ -3151,6 +3151,50 @@ def assistant_log(limit: int = 50, _admin: str = Depends(require_admin)):
     return assistant.recent_log(limit)
 
 
+# ── Sigmalytic Quantum (prototype, admin only): speech in and out around the assistant. See backend/voice.py. ──
+
+@app.get("/api/admin/voice/status")
+def voice_status(_admin: str = Depends(require_admin)):
+    """Whether voice is configured, which models and voice are in use, and today's voice spending."""
+    from backend import voice
+
+    return voice.status()
+
+
+@app.post("/api/admin/voice/ask")
+def voice_ask(payload: dict, admin: str = Depends(require_admin)):
+    """A recorded question (audio) or a typed one: transcribed, answered by the assistant with its usual checks,
+    and returned with a spoken version as MP3 audio."""
+    from backend import voice
+
+    return voice.ask(payload or {}, admin=admin)
+
+
+@app.post("/api/admin/voice/speak")
+def voice_speak(payload: dict, _admin: str = Depends(require_admin)):
+    """Speaks text in the Sigmalytic Quantum voice. mode "answer" shortens an assistant answer first; mode "text" reads as is."""
+    from backend import voice
+
+    p = payload or {}
+    return voice.speak(p.get("text") or "", mode="answer" if p.get("mode") == "answer" else "text")
+
+
+@app.post("/api/admin/voice/morning-report")
+def voice_morning_report(_admin: str = Depends(require_admin)):
+    """Today's saved morning report as MP3 audio in the Sigmalytic Quantum voice (cached, so replays cost nothing)."""
+    from backend import voice
+    from backend.radar_service import _redis_client
+
+    text = None
+    if _redis_client:
+        try:
+            raw = _redis_client.get(MORNING_REPORT_KEY)
+            text = json.loads(raw).get("text") if raw else None
+        except Exception as e:
+            return {"ok": False, "error": str(e)[:300]}
+    return voice.morning_report(text)
+
+
 @app.get("/api/admin/platform-review/status")
 def platform_review_status(_admin: str = Depends(require_admin_or_cron)):
     """Platform Review (admin only): mode (automatic/manual), next scheduled run, whether a review is running,
