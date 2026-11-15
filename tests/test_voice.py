@@ -333,3 +333,27 @@ def test_id3_tags_dropped_between_pieces(monkeypatch):
     out = v.synthesize(" ".join(f"Sentence {i} of a long report." for i in range(700)))
     assert len(n) > 1 and out["audio"].startswith(tag + MP3 + b"X")
     assert out["audio"].count(b"ID3") == 1                      # only the first piece keeps its tag
+
+
+def test_cached_non_audio_is_ignored(monkeypatch):
+    import base64 as b64
+    junk = b64.b64encode(b"not audio").decode()
+
+    class R:
+        def get(self, k):
+            return junk if k.startswith("voice:tts:") else None
+
+        def setex(self, *a):
+            pass
+
+        def incrbyfloat(self, *a):
+            pass
+
+        def expire(self, *a):
+            pass
+
+    monkeypatch.setattr(v, "_redis", lambda: R())
+    calls = []
+    monkeypatch.setattr("requests.post", lambda *a, **k: calls.append(1) or FakeResp(content=MP3 + b"fresh"))
+    out = v.synthesize("Hello again.")
+    assert out["ok"] and not out["cached"] and out["audio"] == MP3 + b"fresh" and calls == [1]

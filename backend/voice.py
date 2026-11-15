@@ -348,9 +348,8 @@ def synthesize(text: str) -> Dict[str, Any]:
         return {"ok": False, "error": "OPENAI_API_KEY is not set on the backend service in Render, so voice is off."}
     h = hashlib.sha256("|".join([tts_model(), tts_voice(), style(), text]).encode()).hexdigest()
     cached = _cache_get(h)
-    if cached:
-        return {"ok": True, "audio": cached, "mime": sniff_audio(cached) or "audio/mpeg", "cached": True,
-                "cost_usd": 0.0}
+    if cached and sniff_audio(cached):                    # a stored reply that is not audio is ignored
+        return {"ok": True, "audio": cached, "mime": sniff_audio(cached), "cached": True, "cost_usd": 0.0}
     est = speech_minutes(text) * PRICES_PER_MINUTE["tts"]
     cap = _check_cap(est)
     if cap:
