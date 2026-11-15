@@ -5885,6 +5885,74 @@ def build_astro_tab(session: dict) -> html.Div:
 
 
 
+def _voice_ms(name, default):
+    try:
+        return max(0, int(os.getenv(name, default)))
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def _quantum_voice_panel():
+    """Sigmalytic Quantum (prototype): talk to the assistant and hear answers and the morning report.
+    The conversation runs as a state machine in assets/quantum_voice.js (Ready, Listening, Processing, Speaking,
+    Text only, Reconnecting, Microphone unavailable, Stopped); hands-free never depends on audio succeeding.
+    Speech-to-text and the voice run on the backend (backend/voice.py). The voice is labelled as AI-generated, as
+    OpenAI's usage policies require. Timings come from the frontend service's environment (data-* attributes)."""
+    gold_btn = {"background": "rgba(201,162,39,.15)", "color": "#E5C66B", "border": "1px solid rgba(201,162,39,.6)",
+                "borderRadius": "8px", "padding": "10px 18px", "fontSize": "13px", "fontWeight": "700",
+                "cursor": "pointer", "marginRight": "8px", "marginTop": "6px"}
+    plain_btn = {"background": "transparent", "color": WHITE, "border": f"1px solid {BORDER}", "borderRadius": "8px",
+                 "padding": "10px 16px", "fontSize": "13px", "cursor": "pointer", "marginRight": "8px",
+                 "marginTop": "6px"}
+    cfg = {"data-resume-ms": _voice_ms("VOICE_RESUME_DELAY_MS", "900"),
+           "data-silence-ms": _voice_ms("VOICE_SILENCE_MS", "1500"),
+           "data-no-speech-ms": _voice_ms("VOICE_NO_SPEECH_MS", "10000"),
+           "data-processing-timeout-ms": _voice_ms("VOICE_PROCESSING_TIMEOUT_MS", "215000"),
+           "data-max-errors": _voice_ms("VOICE_MAX_CONSECUTIVE_ERRORS", "3")}
+    return html.Div([
+        html.Div([
+            html.Span("SIGMALYTIC QUANTUM\u2122", style={
+                "fontSize": "12px", "fontWeight": "800", "letterSpacing": "0.06em", "color": "#E5C66B",
+                "marginRight": "12px"}),
+            html.Span("\u25CF Ready", id="assistant-voice-state", style={
+                "fontSize": "11.5px", "fontWeight": "700", "padding": "3px 10px", "borderRadius": "999px",
+                "background": "rgba(148,163,184,.18)", "color": WHITE}),
+        ], style={"display": "flex", "alignItems": "center", "marginBottom": "6px"}),
+        html.Div("Push to talk: tap Talk, ask your question out loud, then tap again to send. Hands-free: switch it "
+                 "on and just speak; Sigmalytic Quantum sends when you pause and listens again after each answer, "
+                 "whether or not the answer could be spoken. Stop always turns the microphone off. Answers get the "
+                 "same checks as typed questions; a short version is read aloud and the full answer appears above. "
+                 "Prototype, admin only.",
+                 style={"fontSize": "11px", "color": MUTED, "marginBottom": "6px", "lineHeight": "1.6"}),
+        html.Div([
+            html.Button("\U0001F399 Talk", id="assistant-mic-btn", n_clicks=0, style=gold_btn),
+            html.Button("\u25A0 Stop", id="assistant-voice-stop", n_clicks=0, style=plain_btn),
+            html.Button("\U0001F50A Speak last answer", id="assistant-speak-last-btn", n_clicks=0, style=plain_btn),
+            html.Button("\u2600\ufe0f Morning report", id="assistant-voice-report-btn", n_clicks=0,
+                        style=plain_btn),
+            html.Button("\U0001F3A4 Reconnect microphone", id="assistant-mic-reconnect", n_clicks=0,
+                        style={**gold_btn, "display": "none"}),
+        ]),
+        html.Div([
+            dcc.Checklist(id="assistant-voice-on", value=["y"],
+                          options=[{"label": " Read answers aloud", "value": "y"}],
+                          style={"fontSize": "12px", "color": WHITE, "marginRight": "18px"}),
+            dcc.Checklist(id="assistant-voice-handsfree", value=[],
+                          options=[{"label": " Hands-free conversation", "value": "y"}],
+                          style={"fontSize": "12px", "color": WHITE}),
+        ], style={"display": "flex", "flexWrap": "wrap", "marginTop": "8px"}),
+        dcc.Store(id="assistant-voice-recording"),
+        dcc.Store(id="assistant-voice-result"),
+        dcc.Store(id="assistant-voice-result-ack"),
+        html.Div(id="assistant-voice-status", style={"fontSize": "12px", "color": YELLOW_DIM, "marginTop": "6px",
+                                                     "minHeight": "16px"}),
+        html.Audio(id="assistant-voice-audio", controls=True, style={"width": "100%", "marginTop": "6px"}),
+        html.Div("Sigmalytic Quantum\u2122 \u00b7 AI-generated voice", style={
+            "fontSize": "10.5px", "color": MUTED, "marginTop": "2px"}),
+    ], id="sigmalytic-quantum-panel", **cfg,
+       style={"marginTop": "16px", "paddingTop": "12px", "borderTop": "1px solid rgba(201,162,39,.35)"})
+
+
 def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     """
     Build the full admin monitoring page.
@@ -6049,6 +6117,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                                "borderRadius": "8px", "padding": "10px 16px", "fontSize": "13px",
                                "cursor": "pointer"}),
         ], style={"marginTop": "10px"}),
+        _quantum_voice_panel(),
     ], sx={"marginBottom": "16px", "border": "1px solid rgba(52,211,153,.55)",
            "boxShadow": "0 0 18px rgba(52,211,153,.25), 0 8px 32px rgba(0,0,0,.32)"})
 
@@ -11687,6 +11756,121 @@ def handle_assistant_ask(ask_clicks, clear_clicks, question, history, session, a
     return history[-30:], ""
 
 
+def _voice_post(path, body, session, timeout):
+    """POST to a Sigmalytic Quantum voice endpoint. Returns (json, error message)."""
+    try:
+        r = req.post(f"{BACKEND_HTTP}{path}", json=body, headers=_auth_headers(session), timeout=timeout)
+    except Exception as exc:
+        return None, f"Could not reach the backend: {str(exc)[:200]}"
+    if r.status_code == 401:
+        return None, "Not signed in, or session expired. Please sign in again."
+    if r.status_code == 403:
+        return None, "Admin access only."
+    if not r.ok:
+        return None, f"Voice failed (error {r.status_code}): {r.text[:200]}"
+    return r.json(), None
+
+
+def _voice_result(outcome, token=None, kind="answer", audio=None, message=""):
+    """What the browser's conversation state machine acts on. outcome: audio | text_only | error | no_speech."""
+    return {"outcome": outcome, "token": token, "kind": kind, "audio": audio, "message": message,
+            "at": time.time()}
+
+
+@app.callback(Output("assistant-history", "data", allow_duplicate=True),
+              Output("assistant-voice-result", "data"),
+              Input("assistant-voice-recording", "data"),
+              State("assistant-history", "data"),
+              State("assistant-voice-on", "value"),
+              State("s-session", "data"),
+              State("assistant-attachment", "data"),
+              prevent_initial_call=True)
+def handle_voice_question(recording, history, voice_on, session, attachment=None):
+    """Admin-only: a spoken question (recorded in the browser) goes to /api/admin/voice/ask, which transcribes it,
+    asks the assistant and returns the checked answer with a spoken version. The heard question and the written
+    answer join the conversation like typed turns. Every path, including an unexpected error, returns a result, so
+    hands-free always leaves the Processing state."""
+    if not recording or not recording.get("audio"):
+        return no_update, no_update
+    token = recording.get("token")
+    try:
+        speak = "y" in (voice_on or [])
+        history = list(history or [])
+        convo = [{"role": m["role"], "content": m["content"]} for m in history
+                 if m.get("role") in ("user", "assistant")][-8:]
+        body = {"audio": recording["audio"], "mime": recording.get("mime"),
+                "duration_ms": recording.get("duration_ms"), "history": convo, "speak": speak, "token": token}
+        if attachment and attachment.get("data"):
+            body["attachment"] = {"name": attachment["name"], "data": attachment["data"]}
+        d, err = _voice_post("/api/admin/voice/ask", body, session, timeout=200)
+        if err:
+            return no_update, _voice_result("error", token, message=err)
+        if d.get("stage") == "listen":                 # nothing usable was heard: no turn is added
+            return no_update, _voice_result("no_speech", token, message=d.get("error") or "No speech was heard.")
+        turn = {"role": "user", "content": d.get("heard") or d.get("question") or "", "voice": True}
+        if body.get("attachment"):
+            turn["attachment"] = attachment.get("name")
+        history.append(turn)
+        meta = {"lookups": d.get("lookups") or [], "usage": d.get("usage") or {}}
+        if not d.get("ok"):
+            history.append({"role": "error", "content": d.get("error") or "No answer.", "meta": meta})
+            return history[-30:], _voice_result("error", token, message="No answer this time; see the note above.")
+        history.append({"role": "assistant", "content": d.get("answer") or "", "meta": meta,
+                        "disclaimer": d.get("disclaimer") or "", "notice": d.get("notice") or ""})
+        if d.get("audio"):
+            return history[-30:], _voice_result("audio", token, audio=d["audio"])
+        if not speak:
+            return history[-30:], _voice_result("text_only", token)
+        why = d.get("voice_error") or "no audio was returned"
+        return history[-30:], _voice_result("text_only", token, message=f"Text only: the answer could not be "
+                                                                       f"spoken ({why[:160]}).")
+    except Exception as exc:
+        return no_update, _voice_result("error", token, message=f"Something went wrong: {str(exc)[:160]}")
+
+
+@app.callback(Output("assistant-voice-result", "data", allow_duplicate=True),
+              Input("assistant-speak-last-btn", "n_clicks"),
+              State("assistant-history", "data"),
+              State("s-session", "data"),
+              prevent_initial_call=True)
+def handle_voice_speak_last(n_clicks, history, session):
+    """Admin-only: reads the latest answer aloud (a short spoken version; the full answer stays on screen)."""
+    last = next((m for m in reversed(history or []) if m.get("role") == "assistant" and m.get("content")), None)
+    if not last:
+        return _voice_result("error", kind="manual", message="There is no answer to read yet.")
+    d, err = _voice_post("/api/admin/voice/speak", {"text": last["content"], "mode": "answer"}, session, timeout=90)
+    if err or not d.get("ok"):
+        return _voice_result("error", kind="manual", message=err or d.get("error") or "Could not read it aloud.")
+    return _voice_result("audio", kind="manual", audio=d["audio"])
+
+
+@app.callback(Output("assistant-voice-result", "data", allow_duplicate=True),
+              Input("assistant-voice-report-btn", "n_clicks"),
+              State("s-session", "data"),
+              prevent_initial_call=True)
+def handle_voice_morning_report(n_clicks, session):
+    """Admin-only: today's saved morning report in the Sigmalytic Quantum voice. Unlike the browser voice, this is a
+    real audio file, so the player can pause, scrub and replay; replays come from the backend's cache at no cost."""
+    d, err = _voice_post("/api/admin/voice/morning-report", {}, session, timeout=240)
+    if err or not d.get("ok"):
+        return _voice_result("error", kind="manual",
+                             message=err or d.get("error") or "The morning report could not be read aloud.")
+    return _voice_result("audio", kind="manual", audio=d["audio"],
+                         message="Morning report" + (" (from cache)" if d.get("cached") else ""))
+
+
+# Hands the result to the browser's conversation state machine (assets/quantum_voice.js).
+app.clientside_callback(
+    """function (result) {
+        if (result && window.SigmalyticQuantum) { window.SigmalyticQuantum.onResult(result); }
+        return window.dash_clientside.no_update;
+    }""",
+    Output("assistant-voice-result-ack", "data"),
+    Input("assistant-voice-result", "data"),
+    prevent_initial_call=True,
+)
+
+
 def _assistant_meta_line(meta):
     meta = meta or {}
     u = meta.get("usage") or {}
@@ -11712,7 +11896,8 @@ def render_assistant_thread(history):
     for m in history:
         role = m.get("role")
         if role == "user":
-            text = m.get("content", "") + (f"\n\nAttached: {m['attachment']}" if m.get("attachment") else "")
+            text = (("\U0001F399 " if m.get("voice") else "") + m.get("content", "")
+                    + (f"\n\nAttached: {m['attachment']}" if m.get("attachment") else ""))
             out.append(html.Div(text, style={
                 "alignSelf": "flex-end", "maxWidth": "85%", "background": "rgba(255,255,255,.08)",
                 "border": f"1px solid {BORDER}", "borderRadius": "10px", "padding": "8px 12px",
