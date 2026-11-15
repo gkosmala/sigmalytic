@@ -11086,6 +11086,8 @@ def add_csp_headers(response):
         "frame-src 'self' https://js.stripe.com https://hooks.stripe.com https://sigmalytic-backend.onrender.com; "
         "connect-src 'self' https://api.stripe.com https://sigmalytic-backend.onrender.com; "
         "img-src 'self' data: https:; "
+        # Sigmalytic Quantum: spoken answers arrive as audio data and play from a Blob (assets/quantum_voice.js).
+        "media-src 'self' blob: data:; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com data:;"
     )

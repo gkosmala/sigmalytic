@@ -77,3 +77,12 @@ def test_panel_has_states_controls_and_settings():
                    "assistant-voice-handsfree", "data-resume-ms", "data-max-errors", "AI-generated voice",
                    "SIGMALYTIC QUANTUM"):
         assert needed in flat
+
+
+def test_security_policy_allows_voice_audio():
+    """Without media-src, audio falls back to default-src 'self' and Chrome rejects blob:/data: audio
+    ("Media load rejected by URL safety check"), so spoken answers could never play."""
+    resp = app_mod.server.test_client().get("/_dash-layout")
+    csp = resp.headers.get("Content-Security-Policy", "")
+    media = next((d for d in csp.split(";") if d.strip().startswith("media-src")), "")
+    assert "blob:" in media and "data:" in media and "'self'" in media
