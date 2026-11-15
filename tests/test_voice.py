@@ -8,8 +8,11 @@ import pytest
 from backend import voice as v
 
 
+MP3 = b"\xff\xfb\x90\x00"          # an MP3 frame header: what OpenAI's speech endpoint returns
+
+
 class FakeResp:
-    def __init__(self, status=200, payload=None, content=b""):
+    def __init__(self, status=200, payload=None, content=MP3 + b""):
         self.status_code = status
         self.ok = 200 <= status < 300
         self._payload = payload or {}
@@ -111,14 +114,14 @@ def test_synthesize_chunks_joins_and_steers_style(monkeypatch):
 
     def fake_post(url, headers=None, data=None, timeout=None):
         bodies.append(json.loads(data))
-        return FakeResp(content=b"MP3" + str(len(bodies)).encode())
+        return FakeResp(content=MP3 + str(len(bodies)).encode())
 
     monkeypatch.setattr("requests.post", fake_post)
     text = " ".join(f"Line {i} of a long report." for i in range(800))
     out = v.synthesize(text)
     assert out["ok"] and out["mime"] == "audio/mpeg"
     assert len(bodies) > 1 and all(len(b["input"]) <= v.TTS_CHUNK_CHARS for b in bodies)
-    assert out["audio"] == b"".join(b"MP3" + str(i).encode() for i in range(1, len(bodies) + 1))
+    assert out["audio"] == b"".join(MP3 + str(i).encode() for i in range(1, len(bodies) + 1))
     b = bodies[0]
     assert b["model"] == "gpt-4o-mini-tts" and b["voice"] == "onyx" and b["response_format"] == "mp3"
     assert "British" in b["instructions"] and "celebrity" in b["instructions"]
@@ -142,10 +145,10 @@ def test_synthesize_uses_cache(monkeypatch):
 
     monkeypatch.setattr(v, "_redis", lambda: R())
     calls = []
-    monkeypatch.setattr("requests.post", lambda *a, **k: calls.append(1) or FakeResp(content=b"AUDIO"))
+    monkeypatch.setattr("requests.post", lambda *a, **k: calls.append(1) or FakeResp(content=MP3 + b"AUDIO"))
     first = v.synthesize("Good morning. Markets are calm.")
     second = v.synthesize("Good morning. Markets are calm.")
-    assert first["ok"] and second["ok"] and second["cached"] and second["audio"] == b"AUDIO"
+    assert first["ok"] and second["ok"] and second["cached"] and second["audio"] == MP3 + b"AUDIO"
     assert len(calls) == 1
 
 
@@ -157,7 +160,7 @@ def test_daily_cap_blocks(monkeypatch):
 
 
 def test_speak_answer_mode_shortens(monkeypatch):
-    monkeypatch.setattr("requests.post", lambda *a, **k: FakeResp(content=b"A"))
+    monkeypatch.setattr("requests.post", lambda *a, **k: FakeResp(content=MP3 + b"A"))
     out = v.speak("**Bold** claim at $10.", mode="answer")
     assert out["ok"] and out["spoken"] == "Bold claim at $10." and out["audio"].startswith("data:audio/mpeg;base64,")
     assert out["notice"] == "AI-generated voice"
@@ -177,7 +180,7 @@ def test_ask_transcribes_asks_assistant_and_speaks(monkeypatch):
     def fake_post(url, **kw):
         if url == v.STT_URL:
             return FakeResp(payload={"text": "Where is SPY?"})
-        return FakeResp(content=b"VOICE")
+        return FakeResp(content=MP3 + b"VOICE")
 
     monkeypatch.setattr(assistant, "ask", fake_ask)
     monkeypatch.setattr("requests.post", fake_post)
@@ -247,7 +250,7 @@ def test_audio_retried_once_then_succeeds(monkeypatch, fresh_health):
 
     def flaky(url, **kw):
         calls.append(url)
-        return FakeResp(status=500, payload={"error": {"message": "busy"}}) if len(calls) == 1 else FakeResp(content=b"OK")
+        return FakeResp(status=500, payload={"error": {"message": "busy"}}) if len(calls) == 1 else FakeResp(content=MP3 + b"OK")
 
     monkeypatch.setattr("requests.post", flaky)
     out = v.ask({"question": "q", "token": 7})
@@ -295,3 +298,38 @@ def test_assistant_prompt_forbids_unconfirmed_live_claims():
     from backend import assistant
     p = assistant.build_system_prompt()
     assert "Never call data live, real-time or up to the minute unless" in p
+
+
+# ── audio format checks ──
+
+def test_not_audio_is_reported_not_played(monkeypatch):
+    class R(FakeResp):
+        headers = {"Content-Type": "application/json"}
+    monkeypatch.setattr("requests.post", lambda *a, **k: R(content=b'{"error": "odd"}'))
+    out = v.synthesize("Hello there.")
+    assert not out["ok"] and "not audio" in out["error"] and "application/json" in out["error"]
+
+
+def test_sniff_formats_and_mime():
+    assert v.sniff_audio(b"ID3\x04" + b"\x00" * 10) == "audio/mpeg"
+    assert v.sniff_audio(b"\xff\xf3\x00\x00") == "audio/mpeg"
+    assert v.sniff_audio(b"RIFF\x00\x00\x00\x00WAVEfmt ") == "audio/wav"
+    assert v.sniff_audio(b"OggS\x00") == "audio/ogg"
+    assert v.sniff_audio(b"\x00\x00\x00\x18ftypM4A ") == "audio/mp4"
+    assert v.sniff_audio(b'{"error":1}') is None and v.sniff_audio(b"") is None
+
+
+def test_wav_reply_gets_wav_mime(monkeypatch):
+    wav = b"RIFF\x00\x00\x00\x00WAVEfmt " + b"\x00" * 20
+    monkeypatch.setattr("requests.post", lambda *a, **k: FakeResp(content=wav))
+    out = v.speak("Hello.", mode="text")
+    assert out["ok"] and out["audio"].startswith("data:audio/wav;base64,")
+
+
+def test_id3_tags_dropped_between_pieces(monkeypatch):
+    tag = b"ID3\x04\x00\x00\x00\x00\x00\x02AB"          # 2-byte ID3 body
+    n = []
+    monkeypatch.setattr("requests.post", lambda *a, **k: n.append(1) or FakeResp(content=tag + MP3 + b"X"))
+    out = v.synthesize(" ".join(f"Sentence {i} of a long report." for i in range(700)))
+    assert len(n) > 1 and out["audio"].startswith(tag + MP3 + b"X")
+    assert out["audio"].count(b"ID3") == 1                      # only the first piece keeps its tag

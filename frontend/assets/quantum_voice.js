@@ -291,12 +291,33 @@
   }
 
   // ── speaking ──
+  // The server sends audio as a data URL; it is played from a Blob instead, which has no URL-length limit and is
+  // the most reliable way to hand media to the player. The previous Blob is released each time.
+  var lastBlobUrl = null;
+  function toBlobUrl(src) {
+    var m = /^data:([^;,]+)(;base64)?,/.exec(src || "");
+    if (!m || !m[2] || !window.Blob || !window.URL || !URL.createObjectURL) { return src; }
+    try {
+      var bin = atob(src.slice(m[0].length)), bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) { bytes[i] = bin.charCodeAt(i); }
+      if (lastBlobUrl) { URL.revokeObjectURL(lastBlobUrl); }
+      lastBlobUrl = URL.createObjectURL(new Blob([bytes], { type: m[1] }));
+      return lastBlobUrl;
+    } catch (e) { return src; }
+  }
+  function mediaError(p) {
+    var err = p && p.error;
+    if (!err) { return ""; }
+    var names = { 1: "aborted", 2: "network", 3: "decode", 4: "format not supported" };
+    return " (browser media error " + err.code + ": " + (names[err.code] || "unknown") +
+           (err.message ? ", " + err.message : "") + ")";
+  }
   function play(src, okText) {
     var p = player();
     if (!p) { settle("TEXT_ONLY", "Text only: the audio player is missing.", false); return; }
     if (rec) { stopListening("stopped"); }                 // a manual playback never overlaps a recording
     try { p.pause(); } catch (e) { /* not playing */ }
-    p.src = src;
+    p.src = toBlobUrl(src);
     setState("SPEAKING", okText || "");
     var playing = p.play();
     if (playing && playing.catch) {
@@ -313,7 +334,7 @@
   }, true);
   document.addEventListener("error", function (e) {
     if (e.target && e.target.id === "assistant-voice-audio" && state === "SPEAKING") {
-      settle("TEXT_ONLY", "Text only: the audio could not be played.", false);
+      settle("TEXT_ONLY", "Text only: the audio could not be played" + mediaError(e.target) + ".", false);
     }
   }, true);
   document.addEventListener("pause", function (e) {      // the user paused the player by hand

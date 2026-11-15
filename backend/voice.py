@@ -349,7 +349,8 @@ def synthesize(text: str) -> Dict[str, Any]:
     h = hashlib.sha256("|".join([tts_model(), tts_voice(), style(), text]).encode()).hexdigest()
     cached = _cache_get(h)
     if cached:
-        return {"ok": True, "audio": cached, "mime": "audio/mpeg", "cached": True, "cost_usd": 0.0}
+        return {"ok": True, "audio": cached, "mime": sniff_audio(cached) or "audio/mpeg", "cached": True,
+                "cost_usd": 0.0}
     est = speech_minutes(text) * PRICES_PER_MINUTE["tts"]
     cap = _check_cap(est)
     if cap:
@@ -367,11 +368,43 @@ def synthesize(text: str) -> Dict[str, Any]:
             return {"ok": False, "error": f"Text-to-speech could not be reached: {str(exc)[:160]}"}
         if not r.ok:
             return {"ok": False, "error": f"Text-to-speech failed ({r.status_code}): {_error_text(r)}"}
-        parts.append(r.content)
+        kind = sniff_audio(r.content)
+        ctype = str((getattr(r, "headers", None) or {}).get("Content-Type", ""))
+        print(f"[voice] tts {r.status_code} type={ctype or '?'} bytes={len(r.content)} "
+              f"head={r.content[:8].hex()} format={kind or 'not audio'}", flush=True)
+        if not kind:
+            return {"ok": False, "error": f"Text-to-speech returned something that is not audio (content type "
+                                          f"{ctype or 'unknown'}, {len(r.content)} bytes)."}
+        parts.append(r.content if not parts else _strip_id3(r.content))
     audio = b"".join(parts)
+    mime = sniff_audio(audio) or "audio/mpeg"
     _record(est)
     _cache_put(h, audio)
-    return {"ok": True, "audio": audio, "mime": "audio/mpeg", "cached": False, "cost_usd": round(est, 5)}
+    return {"ok": True, "audio": audio, "mime": mime, "cached": False, "cost_usd": round(est, 5)}
+
+
+def sniff_audio(b: bytes) -> Optional[str]:
+    """The audio format from the file's first bytes, or None if it is not audio (for example a JSON error)."""
+    b = b or b""
+    if b[:3] == b"ID3" or (len(b) > 1 and b[0] == 0xFF and (b[1] & 0xE0) == 0xE0):
+        return "audio/mpeg"
+    if b[:4] == b"RIFF" and b[8:12] == b"WAVE":
+        return "audio/wav"
+    if b[:4] == b"OggS":
+        return "audio/ogg"
+    if b[:4] == b"fLaC":
+        return "audio/flac"
+    if b[4:8] == b"ftyp":
+        return "audio/mp4"
+    return None
+
+
+def _strip_id3(b: bytes) -> bytes:
+    """Drops a leading ID3v2 tag so pieces of a long text join into one clean MP3 stream."""
+    if b[:3] != b"ID3" or len(b) < 10:
+        return b
+    size = (b[6] & 0x7F) << 21 | (b[7] & 0x7F) << 14 | (b[8] & 0x7F) << 7 | (b[9] & 0x7F)
+    return b[10 + size:]
 
 
 def data_url(audio: bytes, mime: str = "audio/mpeg") -> str:
