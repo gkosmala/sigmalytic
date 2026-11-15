@@ -106,31 +106,67 @@
   }
 
   // ── listening ──
+  // Pause detection, relative to the room: the first half second measures the background noise (fans, computers,
+  // traffic), and speech and silence are judged against that level, not a fixed number. A sound must last about a
+  // fifth of a second to count as speech, so a click or a cough does not start the clock.
+  var CALIBRATE_MS = 500, SPEECH_MS = 200;
+  function level(pct) {
+    var bar = $("assistant-voice-level-bar");
+    if (bar) { bar.style.width = Math.max(0, Math.min(100, pct)) + "%"; }
+  }
+  function noPauseDetection() {
+    message("Listening… pause detection is not available in this browser: tap Send now when you finish.");
+  }
   function startVad(s) {
     var Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) { return; }
+    if (!Ctx) { noPauseDetection(); return; }
     try {
       audioCtx = new Ctx();
+      if (audioCtx.state === "suspended" && audioCtx.resume) { audioCtx.resume(); }
       var analyser = audioCtx.createAnalyser();
       analyser.fftSize = 1024;
       audioCtx.createMediaStreamSource(s).connect(analyser);
       var buf = new Float32Array(analyser.fftSize);
+      var t0 = Date.now(), samples = [], floor = null, speechFor = 0, lastTick = t0, warned = false;
       heard = false;
-      lastVoice = Date.now();
+      lastVoice = t0;
       vadTimer = setInterval(function () {
+        var now = Date.now(), dt = now - lastTick;
+        lastTick = now;
+        if (audioCtx && audioCtx.state === "suspended") {           // the browser would not start audio analysis
+          if (!warned && now - t0 > 800) { warned = true; noPauseDetection(); }
+          return;
+        }
         analyser.getFloatTimeDomainData(buf);
         var sum = 0;
         for (var i = 0; i < buf.length; i++) { sum += buf[i] * buf[i]; }
-        var now = Date.now();
-        if (Math.sqrt(sum / buf.length) > 0.02) { heard = true; lastVoice = now; }
+        var rms = Math.sqrt(sum / buf.length);
+        if (floor === null) {                                        // measuring the room
+          samples.push(rms);
+          if (now - t0 < CALIBRATE_MS) { return; }
+          samples.sort(function (a, b) { return a - b; });
+          floor = samples[Math.floor(samples.length / 2)] || 0;
+        }
+        var speakAt = Math.max(0.012, floor * 2.5 + 0.004);
+        var quietBelow = Math.max(0.008, floor * 1.6 + 0.002);
+        level(rms / (speakAt * 2) * 100);
+        if (rms > speakAt) {
+          speechFor += dt;
+          if (speechFor >= SPEECH_MS) { heard = true; }
+          if (heard) { lastVoice = now; }
+        } else {
+          speechFor = 0;
+          if (!heard && rms < quietBelow) { floor = floor * 0.95 + rms * 0.05; }   // follow the room while waiting
+        }
         if (heard && now - lastVoice > cfg("silence-ms", 1500)) { stopListening(null); }
         else if (!heard && now - started > cfg("no-speech-ms", 10000)) { stopListening("no_speech"); }
       }, 100);
-    } catch (e) { stopVad(); }
+    } catch (e) { stopVad(); noPauseDetection(); }
   }
   function stopVad() {
     clearInterval(vadTimer);
     vadTimer = null;
+    level(0);
     if (audioCtx) { try { audioCtx.close(); } catch (e) { /* closed */ } audioCtx = null; }
   }
   function releaseMic() {
@@ -192,7 +228,7 @@
         rec.start();
         if (handsFree()) {
           startVad(s);
-          setState("LISTENING", "Listening… speak naturally; your question is sent when you pause.");
+          setState("LISTENING", "Listening\u2026 ask your question, then pause: it sends after a short silence (or tap Send now).");
         } else {
           setState("LISTENING", "Listening… tap again to send (60 seconds at most).");
         }

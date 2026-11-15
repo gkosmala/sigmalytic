@@ -5946,6 +5946,12 @@ def _quantum_voice_panel():
         dcc.Store(id="assistant-voice-result-ack"),
         html.Div(id="assistant-voice-status", style={"fontSize": "12px", "color": YELLOW_DIM, "marginTop": "6px",
                                                      "minHeight": "16px"}),
+        html.Div(html.Div(id="assistant-voice-level-bar", style={
+            "width": "0%", "height": "100%", "background": "#E5C66B", "borderRadius": "3px",
+            "transition": "width 90ms linear"}),
+            title="Microphone level (hands-free)",
+            style={"height": "5px", "background": "rgba(148,163,184,.18)", "borderRadius": "3px", "marginTop": "6px",
+                   "maxWidth": "260px"}),
         html.Audio(id="assistant-voice-audio", controls=True, style={"width": "100%", "marginTop": "6px"}),
         html.Div("Sigmalytic Quantum\u2122 \u00b7 AI-generated voice", style={
             "fontSize": "10.5px", "color": MUTED, "marginTop": "2px"}),

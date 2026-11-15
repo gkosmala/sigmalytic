@@ -20,6 +20,13 @@ MediaRecorder.isTypeSupported=()=>true;
 MediaRecorder.prototype.start=function(){this.state="recording";};
 MediaRecorder.prototype.stop=function(){var me=this;this.state="inactive";setTimeout(function(){me.ondataavailable({data:new Blob([new Uint8Array(5000)])});me.onstop();},5);};
 window.FileReader=function FakeReader(){var me=this; this.readAsDataURL=function(b){ setTimeout(function(){ me.result='data:audio/webm;base64,AAAA'; me.onload(); },5); };};
+
+function FakeCtx(){ this.state=window.__ctxState||'running'; }
+FakeCtx.prototype.resume=function(){ return Promise.resolve(); };
+FakeCtx.prototype.close=function(){};
+FakeCtx.prototype.createAnalyser=function(){ return {fftSize:1024, getFloatTimeDomainData:function(b){ for(var i=0;i<b.length;i++){ b[i]=(i%2?1:-1)*window.__lvl; } }}; };
+FakeCtx.prototype.createMediaStreamSource=function(){ return {connect:function(){}}; };
+window.__lvl=0;
 window.AudioContext=undefined; window.webkitAudioContext=undefined;
 var P=document.getElementById('assistant-voice-audio');
 P.play=function(){ if(playMode==="blocked") return Promise.reject(new Error("autoplay")); Object.defineProperty(P,'paused',{value:false,configurable:true}); setTimeout(function(){Object.defineProperty(P,'paused',{value:true,configurable:true});P.dispatchEvent(new Event('ended'));},80); return Promise.resolve(); };
@@ -88,6 +95,26 @@ async function speakAndSend(){ await sleep(650); window.__n=sent.length; click('
   // 13 hands-free + prompt pending + Stop
   click('assistant-voice-stop'); await sleep(30); micMode="hang"; hf(true); await sleep(50); click('assistant-voice-stop'); await sleep(30);
   micMode="ok"; await sleep(300); check("Stop during pending prompt: stays stopped", S()==="STOPPED");
+  // 14 pause detection in a noisy room (steady background above the old fixed level): speak, pause -> sends
+  click('assistant-voice-stop'); await sleep(30); window.AudioContext=FakeCtx; window.__ctxState='running';
+  window.__lvl=0.03; window.__n=sent.length; hf(true); await sleep(700);
+  check("VAD noisy room: listening while only background", S()==="LISTENING");
+  window.__lvl=0.25; await sleep(900); window.__lvl=0.03; await sleep(1700);
+  check("VAD noisy room: sends after the pause", S()==="PROCESSING" && sent.length===window.__n+1);
+  Q.onResult({outcome:"text_only",token:sent[sent.length-1],message:""}); await sleep(150);
+  check("VAD noisy room: listening again after the answer", S()==="LISTENING");
+  // 15 quiet room, soft voice
+  window.__lvl=0.002; click('assistant-voice-stop'); await sleep(30); window.__n=sent.length; hf(true); await sleep(700);
+  window.__lvl=0.05; await sleep(900); window.__lvl=0.002; await sleep(1700);
+  check("VAD quiet room: soft voice is heard and sent", S()==="PROCESSING" && sent.length===window.__n+1);
+  // 16 a click or cough alone does not count as a question
+  click('assistant-voice-stop'); await sleep(30); window.__lvl=0.02; window.__n=sent.length; hf(true); await sleep(700);
+  window.__lvl=0.4; await sleep(100); window.__lvl=0.02; await sleep(2600);
+  check("VAD click: not sent; hands-free pauses after no speech", S()==="READY" && sent.length===window.__n && /nothing was heard/.test(status));
+  // 17 audio analysis blocked by the browser: says so instead of hanging silently
+  click('assistant-voice-stop'); await sleep(30); window.__ctxState='suspended'; hf(true); await sleep(1100);
+  check("VAD blocked: tells the user to tap Send now", S()==="LISTENING" && /tap Send now when you finish/.test(status));
+  click('assistant-voice-stop'); await sleep(30); window.AudioContext=undefined; window.__ctxState='running';
   document.getElementById('log').textContent=LOG.join("\n")+"\nDONE";
 })();
 </script></body></html>
