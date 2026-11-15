@@ -70,6 +70,9 @@ PRICES_PER_MINUTE = {"tts": 0.015, "stt": 0.0045}   # USD per minute of speech; 
 SPEND_KEY = "voice:spend:{day}"
 CACHE_KEY = "voice:tts:{h}"
 _LOCAL_SPEND: Dict[str, float] = {}
+FAILS_BEFORE_COOLDOWN = 3          # consecutive text-to-speech failures before retries pause
+RETRY_COOLDOWN_SECONDS = 300       # how long automatic audio retries stay off after repeated failures
+_TTS_HEALTH: Dict[str, float] = {"fails": 0, "retry_off_until": 0.0}
 
 MIME_EXT = {"audio/webm": "webm", "audio/ogg": "ogg", "audio/mp4": "mp4", "audio/m4a": "m4a", "audio/x-m4a": "m4a",
             "audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/wav": "wav", "audio/x-wav": "wav", "audio/wave": "wav"}
@@ -389,7 +392,9 @@ def speak(text: str, mode: str = "text") -> Dict[str, Any]:
 
 def ask(payload: Dict[str, Any], admin: str = "") -> Dict[str, Any]:
     """A spoken (or typed) question in, the assistant's checked answer out, plus the spoken version as audio.
-    If speech fails after a good answer, the written answer is still returned with a voice_error."""
+    Speech never blocks the answer: if text-to-speech fails, it is retried once (unless retries are cooling down after
+    repeated failures), and if it still fails the written answer is returned with a voice_error. With speak false,
+    no speech is generated at all. The browser's token is echoed so a late reply cannot be mistaken for a newer one."""
     p = payload or {}
     question = str(p.get("question") or "").strip()
     heard = None
@@ -408,12 +413,42 @@ def ask(payload: Dict[str, Any], admin: str = "") -> Dict[str, Any]:
         result["heard"] = heard
     if result.get("ok") and p.get("speak", True):
         s = speak(result.get("answer") or "", mode="answer")
+        _note_tts(s.get("ok", False))
+        if not s.get("ok") and not _is_limit(s.get("error")):
+            if retry_allowed():
+                result["audio_retried"] = True
+                s = speak(result.get("answer") or "", mode="answer")
+                _note_tts(s.get("ok", False))
+            else:
+                result["audio_retry_skipped"] = True
         if s.get("ok"):
             result.update({"spoken": s["spoken"], "audio": s["audio"], "voice_cost_usd": s["cost_usd"],
                            "voice_notice": AI_VOICE_NOTICE})
         else:
             result["voice_error"] = s.get("error")
+    if "token" in p:
+        result["token"] = p["token"]
     return result
+
+
+def _is_limit(error: Any) -> bool:
+    return "limit" in str(error or "").lower()
+
+
+def retry_allowed() -> bool:
+    """One automatic audio retry per answer, unless text-to-speech has failed repeatedly; then retries pause for
+    RETRY_COOLDOWN_SECONDS so a broken voice service cannot cause an endless loop."""
+    return time.time() >= _TTS_HEALTH["retry_off_until"]
+
+
+def _note_tts(ok: bool) -> None:
+    if ok:
+        _TTS_HEALTH["fails"] = 0
+        return
+    _TTS_HEALTH["fails"] += 1
+    if _TTS_HEALTH["fails"] >= FAILS_BEFORE_COOLDOWN:
+        _TTS_HEALTH["retry_off_until"] = time.time() + RETRY_COOLDOWN_SECONDS
+        _TTS_HEALTH["fails"] = 0
 
 
 def morning_report(text: Optional[str]) -> Dict[str, Any]:

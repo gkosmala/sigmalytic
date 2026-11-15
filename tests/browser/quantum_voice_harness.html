@@ -1,0 +1,93 @@
+<!doctype html><html><body>
+<!-- Sigmalytic Quantum: hands-free state-machine scenarios. Fakes the microphone, recorder, file reader and audio player; run by tests/test_voice_browser.py in headless Chrome. -->
+<div id="sigmalytic-quantum-panel" data-resume-ms="50" data-silence-ms="300" data-no-speech-ms="2000" data-processing-timeout-ms="2500" data-max-errors="3">
+<span id="assistant-voice-state"></span>
+<button id="assistant-mic-btn">Talk</button><button id="assistant-voice-stop">Stop</button>
+<button id="assistant-mic-reconnect" style="display:none">Reconnect</button>
+<div id="assistant-voice-handsfree"><input type="checkbox"></div>
+<audio id="assistant-voice-audio"></audio></div>
+<pre id="log"></pre>
+<script>
+window.onerror=function(m,src,l){ (window.LOG||[]).push('   JSERROR '+m+' @'+l); };
+window.LOG=[]; var LOG=window.LOG, sent=[], status="", micMode="ok", playMode="ok";
+function log(s){LOG.push(s);}
+window.dash_clientside={set_props:function(id,p){ if(id==="assistant-voice-recording"){sent.push(p.data.token);}
+  else if(id==="assistant-voice-status"){status=p.children;} else if(id==="assistant-voice-handsfree"){document.querySelector('#assistant-voice-handsfree input').checked=false;} }};
+function FakeTrack(){this.stop=function(){};}
+Object.defineProperty(navigator,"mediaDevices",{configurable:true,value:{getUserMedia:function(){ if(micMode==="hang") return new Promise(function(){}); if(micMode==="denied"){var e=new Error("x");e.name="NotAllowedError";return Promise.reject(e);} var t=new FakeTrack(); return Promise.resolve({getTracks:()=>[t],getAudioTracks:()=>[t]}); }}});
+window.MediaRecorder=function(){this.state="inactive";this.mimeType="audio/webm";};
+MediaRecorder.isTypeSupported=()=>true;
+MediaRecorder.prototype.start=function(){this.state="recording";};
+MediaRecorder.prototype.stop=function(){var me=this;this.state="inactive";setTimeout(function(){me.ondataavailable({data:new Blob([new Uint8Array(5000)])});me.onstop();},5);};
+window.FileReader=function FakeReader(){var me=this; this.readAsDataURL=function(b){ setTimeout(function(){ me.result='data:audio/webm;base64,AAAA'; me.onload(); },5); };};
+window.AudioContext=undefined; window.webkitAudioContext=undefined;
+var P=document.getElementById('assistant-voice-audio');
+P.play=function(){ if(playMode==="blocked") return Promise.reject(new Error("autoplay")); Object.defineProperty(P,'paused',{value:false,configurable:true}); setTimeout(function(){Object.defineProperty(P,'paused',{value:true,configurable:true});P.dispatchEvent(new Event('ended'));},80); return Promise.resolve(); };
+P.pause=function(){};
+var __srcStub=''; Object.defineProperty(P,'src',{configurable:true,get:function(){return __srcStub;},set:function(v){__srcStub=v;}});
+</script>
+<script src="../../frontend/assets/quantum_voice.js"></script>
+<script>
+var S=()=>window.SigmalyticQuantum.state();
+var sleep=ms=>new Promise(r=>setTimeout(r,ms));
+var Q=window.SigmalyticQuantum;
+async function tok(){ for(var i=0;i<200 && sent.length<=window.__n;i++){ await sleep(10);} return sent[sent.length-1]; }
+async function last(){ for(var i=0;i<50 && S()==='PROCESSING' && (sent.length===0 || sent[sent.length-1]!==window.__want);i++){ await sleep(20);} return sent[sent.length-1]; }
+function click(id){document.getElementById(id).click();}
+function hf(on){var b=document.querySelector('#assistant-voice-handsfree input'); b.checked=on; b.dispatchEvent(new Event('change',{bubbles:true}));}
+function check(name,cond){log((cond?"PASS ":"FAIL ")+name+" [state="+S()+"]");}
+async function speakAndSend(){ await sleep(650); window.__n=sent.length; click('assistant-mic-btn'); await sleep(80); }  // "pause" = Send now
+(async function(){
+  // 1 push to talk, audio succeeds
+  click('assistant-mic-btn'); await sleep(50); check("PTT listening", S()==="LISTENING");
+  await sleep(650); window.__n=sent.length; click('assistant-mic-btn'); await sleep(60); check("PTT processing", S()==="PROCESSING");
+  Q.onResult({outcome:"audio",token:(await tok()),audio:"data:audio/mpeg;base64,QQ=="}); await sleep(20);
+  check("PTT speaking", S()==="SPEAKING"); await sleep(150); check("PTT back to ready, no auto-listen", S()==="READY");
+  // 2 hands-free: audio ok -> resume
+  hf(true); await sleep(60); check("HF on starts listening", S()==="LISTENING");
+  await speakAndSend(); check("HF processing", S()==="PROCESSING");
+  Q.onResult({outcome:"audio",token:(await tok()),audio:"x"}); await sleep(200);
+  check("HF audio ok -> listening again", S()==="LISTENING");
+  // 3 audio generation failed -> text only -> resume
+  await speakAndSend(); Q.onResult({outcome:"text_only",token:(await tok()),message:"Text only: TTS down"}); await sleep(10);
+  check("HF text-only state shown", S()==="TEXT_ONLY"); await sleep(120); check("HF text-only -> listening again", S()==="LISTENING");
+  // 4 read aloud off
+  await speakAndSend(); Q.onResult({outcome:"text_only",token:(await tok()),message:""}); await sleep(120);
+  check("HF read-aloud off -> listening again", S()==="LISTENING");
+  // 5 browser blocks playback
+  playMode="blocked"; await speakAndSend(); Q.onResult({outcome:"audio",token:(await tok()),audio:"x"}); await sleep(20);
+  check("HF playback blocked -> text only", S()==="TEXT_ONLY"); await sleep(120); check("HF playback blocked -> listening again", S()==="LISTENING"); playMode="ok";
+  // 6 stale reply ignored
+  await speakAndSend(); var cur=sent[sent.length-1]; Q.onResult({outcome:"audio",token:cur-1,audio:"x"}); await sleep(20);
+  check("stale reply ignored", S()==="PROCESSING");
+  // 7 network timeout -> watchdog
+  await sleep(2600); check("watchdog: timeout -> recovered", S()==="LISTENING"||S()==="READY");
+  await sleep(120); check("watchdog: listening again", S()==="LISTENING");
+  // 8 repeated failures -> pause auto-listening
+  await speakAndSend(); Q.onResult({outcome:"error",token:(await tok()),message:"e2"}); await sleep(120);
+  await speakAndSend(); Q.onResult({outcome:"error",token:(await tok()),message:"e3"}); await sleep(200);
+  check("3 consecutive failures -> auto paused at Ready", S()==="READY" && /paused after repeated/.test(status));
+  // 9 Talk resumes; then Stop stops everything
+  click('assistant-mic-btn'); await sleep(50); check("Talk after pause listens", S()==="LISTENING");
+  click('assistant-voice-stop'); await sleep(50);
+  check("Stop -> stopped, hands-free off", S()==="STOPPED" && !document.querySelector('#assistant-voice-handsfree input').checked);
+  await sleep(300); check("Stop: no auto reopen", S()==="STOPPED");
+  // 10 mic permission lost -> unavailable + reconnect button
+  micMode="denied"; hf(true); await sleep(50);
+  check("mic denied -> unavailable", S()==="MIC_UNAVAILABLE" && document.getElementById('assistant-mic-reconnect').style.display!=="none");
+  await sleep(300); check("mic denied: no auto retry loop", S()==="MIC_UNAVAILABLE");
+  micMode="ok"; click('assistant-mic-reconnect'); await sleep(50); check("reconnect -> listening", S()==="LISTENING");
+  // 11 no duplicate sessions
+  var before=sent.length; await sleep(650); click('assistant-mic-btn'); await sleep(60); click('assistant-mic-btn'); await sleep(60);
+  check("tap while processing does not start a 2nd session", S()==="PROCESSING" && sent.length===before+1);
+  // 12 permission prompt never answered: Talk cancels, then works again
+  click('assistant-voice-stop'); await sleep(30); micMode="hang"; log('   click1'); click('assistant-mic-btn'); await sleep(80);
+  check("prompt pending is not 'listening'", S()!=="LISTENING" && /Opening the microphone/.test(status));
+  click('assistant-mic-btn'); await sleep(30); log('   before 2nd tap: opening-state='+S()+' status='+status); check("tap cancels pending request", S()==="READY" && /cancelled/.test(status)); log('   status='+status);
+  micMode="ok"; click('assistant-mic-btn'); await sleep(50); check("Talk works after cancel", S()==="LISTENING");
+  // 13 hands-free + prompt pending + Stop
+  click('assistant-voice-stop'); await sleep(30); micMode="hang"; hf(true); await sleep(50); click('assistant-voice-stop'); await sleep(30);
+  micMode="ok"; await sleep(300); check("Stop during pending prompt: stays stopped", S()==="STOPPED");
+  document.getElementById('log').textContent=LOG.join("\n")+"\nDONE";
+})();
+</script></body></html>

@@ -226,3 +226,72 @@ def test_main_voice_routes_use_require_admin():
                   '@app.post("/api/admin/voice/speak")', '@app.post("/api/admin/voice/morning-report")'):
         block = src.split(route, 1)[1].split("\n@app.", 1)[0]
         assert "Depends(require_admin)" in block
+
+
+# ── recovery rules ──
+
+@pytest.fixture
+def fresh_health(monkeypatch):
+    monkeypatch.setitem(v._TTS_HEALTH, "fails", 0)
+    monkeypatch.setitem(v._TTS_HEALTH, "retry_off_until", 0.0)
+
+
+def _fake_assistant(monkeypatch, answer="SPY is above $600.00."):
+    from backend import assistant
+    monkeypatch.setattr(assistant, "ask", lambda *a, **k: {"ok": True, "answer": answer})
+
+
+def test_audio_retried_once_then_succeeds(monkeypatch, fresh_health):
+    _fake_assistant(monkeypatch)
+    calls = []
+
+    def flaky(url, **kw):
+        calls.append(url)
+        return FakeResp(status=500, payload={"error": {"message": "busy"}}) if len(calls) == 1 else FakeResp(content=b"OK")
+
+    monkeypatch.setattr("requests.post", flaky)
+    out = v.ask({"question": "q", "token": 7})
+    assert out["ok"] and out["audio_retried"] and out["audio"].startswith("data:audio/mpeg")
+    assert len(calls) == 2 and out["token"] == 7
+
+
+def test_audio_fails_twice_text_still_returned(monkeypatch, fresh_health):
+    _fake_assistant(monkeypatch)
+    calls = []
+    monkeypatch.setattr("requests.post", lambda *a, **k: calls.append(1) or FakeResp(status=503, payload={}))
+    out = v.ask({"question": "q"})
+    assert out["ok"] and out["answer"] and "audio" not in out and out["voice_error"]
+    assert len(calls) == 2                                   # one try plus at most one retry
+
+
+def test_retries_pause_after_repeated_failures(monkeypatch, fresh_health):
+    _fake_assistant(monkeypatch)
+    calls = []
+    monkeypatch.setattr("requests.post", lambda *a, **k: calls.append(1) or FakeResp(status=503, payload={}))
+    v.ask({"question": "q1"})                                 # 2 failures
+    v.ask({"question": "q2"})                                 # 3rd failure starts the cooldown, 4th is not tried
+    assert not v.retry_allowed()
+    n = len(calls)
+    out = v.ask({"question": "q3"})
+    assert out["audio_retry_skipped"] and len(calls) == n + 1   # one attempt, no retry while cooling down
+
+
+def test_no_retry_when_voice_limit_reached(monkeypatch, fresh_health):
+    _fake_assistant(monkeypatch)
+    monkeypatch.setenv("VOICE_DAILY_LIMIT_USD", "0")
+    monkeypatch.setattr("requests.post", lambda *a, **k: pytest.fail("no call past the cap"))
+    out = v.ask({"question": "q"})
+    assert out["ok"] and "voice limit" in out["voice_error"] and "audio_retried" not in out
+
+
+def test_read_aloud_off_skips_speech_entirely(monkeypatch, fresh_health):
+    _fake_assistant(monkeypatch)
+    monkeypatch.setattr("requests.post", lambda *a, **k: pytest.fail("no speech when read-aloud is off"))
+    out = v.ask({"question": "q", "speak": False, "token": 3})
+    assert out["ok"] and "audio" not in out and "voice_error" not in out and out["token"] == 3
+
+
+def test_assistant_prompt_forbids_unconfirmed_live_claims():
+    from backend import assistant
+    p = assistant.build_system_prompt()
+    assert "Never call data live, real-time or up to the minute unless" in p

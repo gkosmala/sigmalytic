@@ -1,193 +1,391 @@
 // Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
-// Sigmalytic Quantum (prototype, admin only): records spoken questions for the AI Sigmalytic Assistant.
+// Sigmalytic Quantum (prototype, admin only): the voice conversation, run as a state machine.
 //
-// Push to talk (default): tap Talk to start, tap again to send (60 seconds at most).
-// Hands-free conversation (optional switch): listening starts at once; the question is sent after about 1.5 seconds
-// of silence; after the spoken answer finishes playing, listening starts again. If nothing is said for 10 seconds,
-// hands-free pauses until Talk is tapped. The microphone is never open while an answer is playing (so the assistant
-// does not hear itself), and it is released whenever recording stops.
+// States (shown in the status pill): Ready, Listening, Processing, Speaking, Text only, Reconnecting,
+// Microphone unavailable, Stopped.
 //
-// A finished recording goes into the Dash store "assistant-voice-recording"; a server callback sends it to
-// /api/admin/voice/ask.
+// Rules
+//  - Push to talk is the default: tap Talk to start, tap again to send (60 seconds at most).
+//  - Hands-free listens only after the user switches it on. It sends after a pause in speech and, after EVERY
+//    outcome (spoken answer, text-only answer, read-aloud off, error, timeout), returns to Ready and reopens the
+//    microphone after a short, configurable delay. It never waits on audio succeeding.
+//  - The backend retries audio once and pauses retries after repeated failures; the browser only sees the result.
+//  - A watchdog ends Processing if no reply arrives in time (network failure, dropped request).
+//  - After repeated consecutive failures, automatic listening pauses until Talk is tapped (no endless loop).
+//  - If microphone permission is lost or the device disappears, automatic listening stops, a warning shows and a
+//    Reconnect microphone button appears.
+//  - Stop always stops capture, playback and any pending reopen; it also switches hands-free off.
+//  - Only one listening session and one playback at a time; a late reply for an older question is ignored.
+//
+// Settings come from data-* attributes on #sigmalytic-quantum-panel (frontend environment variables).
 (function () {
-  var MAX_MS = 60000, SILENCE_MS = 1500, NO_SPEECH_MS = 10000, LEVEL = 0.02;
-  var rec = null, chunks = [], started = 0, timer = null, stream = null;
-  var audioCtx = null, vadTimer = null, heard = false, lastVoice = 0, cancelled = false;
+  var MAX_MS = 60000;
+  var ST = {
+    READY: ["Ready", "rgba(148,163,184,.18)", "#FFFFFF"],
+    LISTENING: ["Listening", "rgba(220,38,38,.25)", "#FCA5A5"],
+    PROCESSING: ["Processing", "rgba(59,130,246,.22)", "#93C5FD"],
+    SPEAKING: ["Speaking", "rgba(201,162,39,.22)", "#E5C66B"],
+    TEXT_ONLY: ["Text only", "rgba(148,163,184,.22)", "#E2E8F0"],
+    RECONNECTING: ["Reconnecting", "rgba(234,179,8,.22)", "#FDE68A"],
+    MIC_UNAVAILABLE: ["Microphone unavailable", "rgba(220,38,38,.25)", "#FCA5A5"],
+    STOPPED: ["Stopped", "rgba(148,163,184,.18)", "#CBD5E1"]
+  };
+  var state = "READY", token = 0, pendingToken = null;
+  var rec = null, chunks = [], started = 0, stream = null, cancelReason = null;
+  var audioCtx = null, vadTimer = null, heard = false, lastVoice = 0;
+  var timers = { resume: null, max: null, watchdog: null };
+  var errors = 0, autoPaused = false, micBlocked = false, opening = false;
 
-  function setProps(id, props) {
-    if (window.dash_clientside && window.dash_clientside.set_props) {
-      window.dash_clientside.set_props(id, props);
-    }
+  // ── helpers ──
+  function $(id) { return document.getElementById(id); }
+  function cfg(name, def) {
+    var p = $("sigmalytic-quantum-panel");
+    var v = p ? parseInt(p.getAttribute("data-" + name), 10) : NaN;
+    return isNaN(v) ? def : v;
   }
-  function status(text) { setProps("assistant-voice-status", { children: text }); }
+  function setProps(id, props) {
+    if (window.dash_clientside && window.dash_clientside.set_props) { window.dash_clientside.set_props(id, props); }
+  }
+  function message(text) { setProps("assistant-voice-status", { children: text || "" }); }
   function handsFree() {
     var box = document.querySelector("#assistant-voice-handsfree input[type=checkbox]");
     return !!(box && box.checked);
   }
-  function player() { return document.getElementById("assistant-voice-audio"); }
-  function label(text, active) {
-    var b = document.getElementById("assistant-mic-btn");
-    if (!b) { return; }
-    b.textContent = text;
-    b.style.background = active ? "#B91C1C" : "rgba(201,162,39,.15)";
-    b.style.color = active ? "#FFFFFF" : "#E5C66B";
-  }
-  function idleLabel() { label(handsFree() ? "🎙 Talk (hands-free)" : "🎙 Talk", false); }
-  function pickMime() {
-    var options = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
-    if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) { return ""; }
-    for (var i = 0; i < options.length; i++) {
-      if (MediaRecorder.isTypeSupported(options[i])) { return options[i]; }
+  function player() { return $("assistant-voice-audio"); }
+  function clear(name) { clearTimeout(timers[name]); timers[name] = null; }
+  function clearAll() { clear("resume"); clear("max"); clear("watchdog"); }
+
+  function setState(next, text) {
+    state = next;
+    var s = ST[next], pill = $("assistant-voice-state");
+    if (pill) {
+      pill.textContent = "● " + s[0];
+      pill.style.background = s[1];
+      pill.style.color = s[2];
     }
-    return "";
+    var b = $("assistant-mic-btn");
+    if (b) {
+      var live = next === "LISTENING";
+      b.textContent = live ? (handsFree() ? "■ Send now" : "■ Stop and send")
+                           : (handsFree() ? "🎙 Talk (hands-free)" : "🎙 Talk");
+      b.style.background = live ? "#B91C1C" : "rgba(201,162,39,.15)";
+      b.style.color = live ? "#FFFFFF" : "#E5C66B";
+    }
+    var rc = $("assistant-mic-reconnect");
+    if (rc) { rc.style.display = next === "MIC_UNAVAILABLE" ? "inline-block" : "none"; }
+    if (text !== undefined) { message(text); }
   }
 
-  // Hands-free: watch the microphone level; stop after a pause that follows speech.
+  // ── reopening the microphone (hands-free only) ──
+  function canAutoListen() { return handsFree() && !autoPaused && !micBlocked && state !== "STOPPED"; }
+  function scheduleResume() {
+    clear("resume");
+    if (!canAutoListen()) { return; }
+    timers.resume = setTimeout(function () {
+      timers.resume = null;
+      if (canAutoListen() && (state === "READY" || state === "TEXT_ONLY") && !rec && !opening) { startListening(); }
+    }, cfg("resume-ms", 900));
+  }
+  function settle(next, text, failed) {
+    // Every outcome ends here: leave Processing/Speaking for a valid resting state, then maybe listen again.
+    clear("watchdog");
+    pendingToken = null;
+    if (failed) {
+      errors += 1;
+      if (handsFree() && errors >= cfg("max-errors", 3)) {
+        autoPaused = true;
+        setState("READY", (text ? text + " " : "") + "Hands-free paused after repeated problems. Tap Talk to " +
+                          "try again.");
+        return;
+      }
+    } else {
+      errors = 0;
+    }
+    setState(next, text);
+    scheduleResume();
+  }
+
+  // ── listening ──
   function startVad(s) {
     var Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) { return; }
-    audioCtx = new Ctx();
-    var analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 1024;
-    audioCtx.createMediaStreamSource(s).connect(analyser);
-    var buf = new Float32Array(analyser.fftSize);
-    heard = false;
-    lastVoice = Date.now();
-    vadTimer = setInterval(function () {
-      analyser.getFloatTimeDomainData(buf);
-      var sum = 0;
-      for (var i = 0; i < buf.length; i++) { sum += buf[i] * buf[i]; }
-      var rms = Math.sqrt(sum / buf.length), now = Date.now();
-      if (rms > LEVEL) { heard = true; lastVoice = now; }
-      if (heard && now - lastVoice > SILENCE_MS) { stop(false); }
-      else if (!heard && now - started > NO_SPEECH_MS) { stop(true); }
-    }, 100);
+    try {
+      audioCtx = new Ctx();
+      var analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 1024;
+      audioCtx.createMediaStreamSource(s).connect(analyser);
+      var buf = new Float32Array(analyser.fftSize);
+      heard = false;
+      lastVoice = Date.now();
+      vadTimer = setInterval(function () {
+        analyser.getFloatTimeDomainData(buf);
+        var sum = 0;
+        for (var i = 0; i < buf.length; i++) { sum += buf[i] * buf[i]; }
+        var now = Date.now();
+        if (Math.sqrt(sum / buf.length) > 0.02) { heard = true; lastVoice = now; }
+        if (heard && now - lastVoice > cfg("silence-ms", 1500)) { stopListening(null); }
+        else if (!heard && now - started > cfg("no-speech-ms", 10000)) { stopListening("no_speech"); }
+      }, 100);
+    } catch (e) { stopVad(); }
   }
   function stopVad() {
     clearInterval(vadTimer);
     vadTimer = null;
-    if (audioCtx) { try { audioCtx.close(); } catch (e) { /* already closed */ } audioCtx = null; }
+    if (audioCtx) { try { audioCtx.close(); } catch (e) { /* closed */ } audioCtx = null; }
   }
-
-  function start() {
-    if (rec) { return; }
+  function releaseMic() {
+    stopVad();
+    if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
+  }
+  function pickMime() {
+    var options = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
+    if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) { return ""; }
+    for (var i = 0; i < options.length; i++) { if (MediaRecorder.isTypeSupported(options[i])) { return options[i]; } }
+    return "";
+  }
+  function micFailed(err) {
+    releaseMic();
+    rec = null;
+    var name = (err && err.name) || "";
+    micBlocked = true;
+    clear("resume");
+    if (name === "NotAllowedError" || name === "SecurityError") {
+      setState("MIC_UNAVAILABLE", "Microphone access is blocked. Allow the microphone for this site, then tap " +
+                                  "Reconnect microphone.");
+    } else if (name === "NotFoundError" || name === "OverconstrainedError") {
+      setState("MIC_UNAVAILABLE", "No microphone was found. Connect one, then tap Reconnect microphone.");
+    } else {
+      setState("MIC_UNAVAILABLE", "The microphone could not be opened. Tap Reconnect microphone to try again.");
+    }
+  }
+  function startListening() {
+    if (rec || opening || state === "PROCESSING") { return; }   // never two sessions at once
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
-      status("This browser cannot record audio. Use a current Chrome, Edge or Safari.");
+      setState("MIC_UNAVAILABLE", "This browser cannot record audio. Use a current Chrome, Edge or Safari.");
       return;
     }
+    clear("resume");
     var p = player();
-    if (p && !p.paused) { p.pause(); }
+    if (p && !p.paused) { p.pause(); }                      // never listen and speak at the same time
+    opening = true;                                         // waiting for the microphone (or the permission prompt)
+    message("Opening the microphone… (tap Talk or Stop to cancel)");
     navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
       .then(function (s) {
+        if (!opening) { s.getTracks().forEach(function (t) { t.stop(); }); return; }   // cancelled meanwhile
+        opening = false;
         stream = s;
+        micBlocked = false;
+        s.getAudioTracks().forEach(function (t) {
+          t.onended = function () {                          // device unplugged or permission revoked mid-session
+            if (rec) { stopListening("mic_lost"); }
+          };
+        });
         var mime = pickMime();
-        rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+        try {
+          rec = mime ? new MediaRecorder(s, { mimeType: mime }) : new MediaRecorder(s);
+        } catch (e) { micFailed(e); return; }
         chunks = [];
-        cancelled = false;
+        cancelReason = null;
         rec.ondataavailable = function (e) { if (e.data && e.data.size) { chunks.push(e.data); } };
-        rec.onstop = finish;
+        rec.onstop = finishRecording;
         started = Date.now();
         rec.start();
         if (handsFree()) {
-          startVad(stream);
-          label("■ Listening… (tap to stop)", true);
-          status("Listening… speak naturally; your question is sent when you pause.");
+          startVad(s);
+          setState("LISTENING", "Listening… speak naturally; your question is sent when you pause.");
         } else {
-          label("■ Stop and send", true);
-          status("Listening… tap again to send (60 seconds at most).");
+          setState("LISTENING", "Listening… tap again to send (60 seconds at most).");
         }
-        timer = setTimeout(function () { stop(false); }, MAX_MS);
-      }).catch(function () {
-        status("Microphone access was blocked. Allow the microphone for this site and try again.");
+        timers.max = setTimeout(function () { stopListening(null); }, MAX_MS);
+      })
+      .catch(function (err) {
+        if (!opening) { return; }                          // cancelled meanwhile: nothing to report
+        opening = false;
+        micFailed(err);
       });
   }
-  function stop(cancel) {
-    clearTimeout(timer);
+  function stopListening(reason) {
+    clear("max");
     stopVad();
-    cancelled = !!cancel;
-    if (rec && rec.state === "recording") { rec.stop(); }
+    cancelReason = reason;
+    if (rec && rec.state === "recording") { rec.stop(); } else { releaseMic(); rec = null; }
   }
-  function finish() {
-    var ms = Date.now() - started;
-    if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
-    var type = (rec && rec.mimeType) || "audio/webm";
+  function finishRecording() {
+    var ms = Date.now() - started, type = (rec && rec.mimeType) || "audio/webm";
     var blob = new Blob(chunks, { type: type });
     rec = null;
     chunks = [];
-    idleLabel();
-    if (cancelled) {
-      status("Hands-free paused: nothing was heard. Tap Talk to continue.");
+    releaseMic();
+    var reason = cancelReason;
+    cancelReason = null;
+    if (reason === "stopped") { return; }                                  // Stop already set the state
+    if (reason === "mic_lost") {
+      micBlocked = true;
+      setState("MIC_UNAVAILABLE", "The microphone was disconnected or its permission was removed. Tap Reconnect " +
+                                  "microphone.");
+      return;
+    }
+    if (reason === "no_speech") {
+      autoPaused = true;
+      setState("READY", "Hands-free paused: nothing was heard. Tap Talk to continue.");
       return;
     }
     if (ms < 500 || !blob.size) {
-      status("That was too short. Tap Talk, ask your question, then tap again.");
+      settle("READY", "That was too short. Ask your question, then pause or tap to send.", false);
       return;
     }
-    status("Thinking…");
+    token += 1;
+    pendingToken = token;
+    setState("PROCESSING", "Thinking…");
+    clear("watchdog");
+    var mine = token;
+    timers.watchdog = setTimeout(function () {
+      if (pendingToken === mine) {
+        settle("READY", "No reply arrived in time. Check your connection; the microphone is ready again.", true);
+      }
+    }, cfg("processing-timeout-ms", 215000));
     var reader = new FileReader();
     reader.onload = function () {
       setProps("assistant-voice-recording", {
-        data: { audio: reader.result, mime: type.split(";")[0], duration_ms: ms, at: Date.now() }
+        data: { audio: reader.result, mime: type.split(";")[0], duration_ms: ms, token: mine, at: Date.now() }
       });
     };
+    reader.onerror = function () { settle("READY", "The recording could not be read. Please try again.", true); };
     reader.readAsDataURL(blob);
   }
 
-  // Talk button: start, or stop and send (in hands-free, a tap while listening sends at once).
-  document.addEventListener("click", function (e) {
-    var b = e.target && e.target.closest ? e.target.closest("#assistant-mic-btn") : null;
-    if (!b) { return; }
-    e.preventDefault();
-    if (rec && rec.state === "recording") { stop(false); } else { start(); }
-  });
+  // ── speaking ──
+  function play(src, okText) {
+    var p = player();
+    if (!p) { settle("TEXT_ONLY", "Text only: the audio player is missing.", false); return; }
+    if (rec) { stopListening("stopped"); }                 // a manual playback never overlaps a recording
+    try { p.pause(); } catch (e) { /* not playing */ }
+    p.src = src;
+    setState("SPEAKING", okText || "");
+    var playing = p.play();
+    if (playing && playing.catch) {
+      playing.catch(function () {                          // autoplay blocked or the audio would not decode
+        if (state === "SPEAKING") {
+          settle("TEXT_ONLY", "Text only: the browser would not play the audio. Press play on the player to " +
+                              "hear it.", false);
+        }
+      });
+    }
+  }
+  document.addEventListener("ended", function (e) {
+    if (e.target && e.target.id === "assistant-voice-audio" && state === "SPEAKING") { settle("READY", "", false); }
+  }, true);
+  document.addEventListener("error", function (e) {
+    if (e.target && e.target.id === "assistant-voice-audio" && state === "SPEAKING") {
+      settle("TEXT_ONLY", "Text only: the audio could not be played.", false);
+    }
+  }, true);
+  document.addEventListener("pause", function (e) {      // the user paused the player by hand
+    var p = e.target;
+    if (p && p.id === "assistant-voice-audio" && state === "SPEAKING" && !p.ended && p.currentTime > 0) {
+      setState("READY", "Paused. Press play to continue, or tap Talk.");
+      clear("resume");
+    }
+  }, true);
+  document.addEventListener("play", function (e) {       // the user resumed the player by hand
+    if (e.target && e.target.id === "assistant-voice-audio" && state === "READY") { setState("SPEAKING", ""); }
+  }, true);
 
-  // Hands-free switch: turning it on starts listening; turning it off ends any listening without sending.
+  // ── results from the server (via the clientside callback) ──
+  function onResult(r) {
+    if (!r) { return; }
+    if (r.kind !== "manual") {
+      if (r.token == null || r.token !== pendingToken) { return; }   // a late reply for an older question
+    } else if (state === "STOPPED") {
+      state = "READY";
+    }
+    if (r.outcome === "audio" && r.audio) {
+      clear("watchdog");
+      pendingToken = null;
+      errors = 0;
+      play(r.audio, r.message || "");
+    } else if (r.outcome === "text_only") {
+      settle("TEXT_ONLY", r.message || "Text only.", false);
+    } else if (r.outcome === "no_speech") {
+      settle("READY", r.message || "No speech was heard.", true);
+    } else {
+      settle("READY", r.message || "Something went wrong; the microphone is ready again.", r.kind !== "manual");
+    }
+  }
+  window.SigmalyticQuantum = { onResult: onResult, state: function () { return state; } };
+
+  // ── controls ──
+  function stopSession() {
+    clearAll();
+    pendingToken = null;
+    opening = false;
+    if (rec) { stopListening("stopped"); } else { releaseMic(); }
+    var p = player();
+    if (p && !p.paused) { p.pause(); }
+    if (handsFree()) { setProps("assistant-voice-handsfree", { value: [] }); }
+    setState("STOPPED", "Session stopped. The microphone is off.");
+  }
+  document.addEventListener("click", function (e) {
+    var t = e.target && e.target.closest ? e.target : null;
+    if (!t) { return; }
+    if (t.closest("#assistant-mic-btn")) {
+      e.preventDefault();
+      if (rec && rec.state === "recording") { stopListening(null); return; }
+      if (opening) {                                       // permission prompt unanswered: cancel the request
+        opening = false;
+        setState("READY", "Microphone request cancelled. Tap Talk to try again.");
+        return;
+      }
+      if (state === "PROCESSING") { message("Still working on the last question…"); return; }
+      autoPaused = false;
+      errors = 0;
+      if (state === "STOPPED" || state === "MIC_UNAVAILABLE" || state === "TEXT_ONLY") { setState("READY"); }
+      startListening();                                    // also interrupts speech (barge-in)
+    } else if (t.closest("#assistant-voice-stop")) {
+      e.preventDefault();
+      stopSession();
+    } else if (t.closest("#assistant-mic-reconnect")) {
+      e.preventDefault();
+      micBlocked = false;
+      autoPaused = false;
+      errors = 0;
+      setState("RECONNECTING", "Reconnecting the microphone…");
+      startListening();
+    }
+  });
   document.addEventListener("change", function (e) {
     if (!e.target || !e.target.closest || !e.target.closest("#assistant-voice-handsfree")) { return; }
     if (handsFree()) {
-      idleLabel();
-      var p = player();
-      if (!p || p.paused) { start(); }
+      autoPaused = false;
+      errors = 0;
+      if (state === "STOPPED" || state === "MIC_UNAVAILABLE") { state = "READY"; }
+      setState(state, "");
+      if (state === "READY" || state === "TEXT_ONLY") { startListening(); }
     } else {
-      if (rec && rec.state === "recording") { stop(true); }
-      idleLabel();
-      status("");
+      clear("resume");
+      opening = false;
+      if (rec) { stopListening("stopped"); }
+      if (state === "LISTENING") { setState("READY", "Hands-free is off. Tap Talk to ask a question."); }
+      else { setState(state); }
     }
   });
 
-  // After a spoken answer finishes, hands-free listens again ("ended" does not bubble, so listen in capture).
-  document.addEventListener("ended", function (e) {
-    if (e.target && e.target.id === "assistant-voice-audio" && handsFree()) {
-      setTimeout(start, 350);
+  // Permission revoked in browser settings while the page is open.
+  try {
+    if (navigator.permissions && navigator.permissions.query) {
+      navigator.permissions.query({ name: "microphone" }).then(function (perm) {
+        perm.onchange = function () {
+          if (perm.state === "denied") {
+            if (rec) { stopListening("mic_lost"); }
+            else {
+              micBlocked = true;
+              clear("resume");
+              setState("MIC_UNAVAILABLE", "Microphone permission was removed. Allow it, then tap Reconnect " +
+                                          "microphone.");
+            }
+          }
+        };
+      }).catch(function () { /* this browser cannot report microphone permission */ });
     }
-  }, true);
-
-  // An answer that comes back with nothing to play (an error, a withheld answer, or read-aloud switched off) would
-  // leave hands-free waiting for an "ended" that never comes. Watch the status line: when it leaves "Thinking…" and
-  // nothing starts playing within a second, listen again.
-  var lastStatus = "", watched = null, lastLoad = 0;
-  ["loadstart", "play"].forEach(function (ev) {
-    document.addEventListener(ev, function (e) {
-      if (e.target && e.target.id === "assistant-voice-audio") { lastLoad = Date.now(); }
-    }, true);
-  });
-  function onStatus() {
-    var el = document.getElementById("assistant-voice-status");
-    var now = el ? el.textContent : "";
-    var was = lastStatus;
-    lastStatus = now;
-    if (was.indexOf("Thinking") !== 0 || now.indexOf("Thinking") === 0) { return; }
-    setTimeout(function () {
-      var p = player();
-      var loading = Date.now() - lastLoad < 3000;   // an answer is loading or playing: "ended" will resume
-      if (handsFree() && !rec && !loading && (!p || p.paused)) { start(); }
-    }, 1000);
-  }
-  setInterval(function () {
-    var el = document.getElementById("assistant-voice-status");
-    if (!el || el === watched) { return; }
-    watched = el;
-    lastStatus = el.textContent;
-    new MutationObserver(onStatus).observe(el, { childList: true, characterData: true, subtree: true });
-  }, 1000);
+  } catch (e) { /* ignore */ }
 })();

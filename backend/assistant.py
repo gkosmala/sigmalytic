@@ -800,6 +800,8 @@ _BASE_PROMPT = (
     "more, say a whole-universe study can be run on the scanner worker.\n"
     "13. For a positions file and questions about losers, gains, cost or RSI, call review_holdings (one call); its "
     "gain/loss, totals and RSI are computed by code, so use them as given and never compute your own. {rule13}"
+    "\n16. Never call data live, real-time or up to the minute unless the lookup that returned it gives a timestamp "
+    "showing it; otherwise give the date and time the data is as of (for example, the scan time or the last close)."
     "{extra}"
 )
 
