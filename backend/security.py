@@ -1,21 +1,19 @@
 """
 backend/security.py — lock down Sigmalytic's backend.
 
-Wire it up in backend/main.py:
+Already wired into backend/main.py:
+    app = FastAPI(..., **create_app_kwargs())
+    install_security(app)
 
-    from backend.security import create_app_kwargs, install_security
+Render settings (sigmalytic-backend):
+    STRICT_MODE      unset / "0"  -> only debug routes + API docs are hidden
+                     "report"     -> ALSO log every signal-data request that has no key
+                                     ("[security] WOULD BLOCK ..."), but let it through
+                     "1"          -> block signal-data requests that have no key (401)
+    SUBSCRIBER_TOKEN shared secret; the frontend sends it as the X-Sigmalytic-Key header
+                     (see frontend/backend_auth.py). Must match on both services.
 
-    app = FastAPI(**create_app_kwargs())   # replaces your current FastAPI(...) call
-    install_security(app)                  # call right after the app is created
-
-Round 1 (safe, automatic on Render): debug routes and API docs disappear;
-nothing else changes.
-
-Round 2 (later, once the frontend and cron jobs send tokens), also set:
-    STRICT_MODE=1
-    ADMIN_TOKEN=<long random string; e.g. python -c "import secrets;print(secrets.token_urlsafe(48))">
-    SUBSCRIBER_TOKEN=<separate long random string>   # interim, until per-user auth exists
-    ALLOWED_ORIGINS=https://sigmalytic-frontend.onrender.com
+Admin routes (/api/admin/...) are NOT touched here: they keep their existing protection.
 """
 
 import os
@@ -27,31 +25,25 @@ from fastapi.responses import JSONResponse
 
 # Render sets RENDER=true on every service, so production is detected automatically.
 IS_PROD = os.getenv("APP_ENV") == "production" or os.getenv("RENDER") == "true"
-ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
+STRICT_MODE = os.getenv("STRICT_MODE", "0").strip().lower()
 SUBSCRIBER_TOKEN = os.getenv("SUBSCRIBER_TOKEN", "")
+KEY_HEADER = "X-Sigmalytic-Key"
 
-# Path prefixes and the token each one requires.
-# Order matters: the first matching prefix wins.
-PROTECTED_PREFIXES = [
-    ("/api/debug", "admin"),           # debug: admin only (or remove entirely in prod)
-    ("/api/admin", "admin"),           # belt-and-braces on top of your existing check
-    ("/api/scoreboard", "subscriber"),  # full track-record detail: paying users only
-    ("/api/campaigns", "subscriber"),
-    ("/api/radar", "subscriber"),
-    ("/api/weis-radar", "subscriber"),
-    ("/api/research", "subscriber"),
-    ("/api/journal", "subscriber"),
-    ("/api/behavior", "subscriber"),
-    ("/api/portfolio", "subscriber"),
-]
-
-# Until STRICT_MODE=1 is set in Render, ONLY debug routes are locked.
-# That keeps the frontend, admin panel and cron jobs working exactly as today.
-if os.getenv("STRICT_MODE", "0") != "1":
-    PROTECTED_PREFIXES = [("/api/debug", "admin")]
-
-# Endpoints that stay public on purpose (marketing / health checks).
-PUBLIC_EXACT = {"/", "/health", "/api/health", "/api/scoreboard/public-summary"}
+# Signal / track-record data: only callers holding the key may read it.
+PROTECTED_PREFIXES = (
+    "/api/scoreboard",
+    "/api/campaigns",
+    "/api/radar",
+    "/api/weis-radar",
+    "/api/research",
+    "/api/journal",
+    "/api/behavior",
+    "/api/portfolio",
+    "/api/reports",
+    "/api/morning-report",
+    "/api/options",
+    "/api/heatmap",
+)
 
 
 def create_app_kwargs() -> dict:
@@ -61,9 +53,9 @@ def create_app_kwargs() -> dict:
     return {}
 
 
-def _token_ok(presented: str, expected: str) -> bool:
-    # Fail closed if the env var is missing; constant-time compare.
-    return bool(expected) and bool(presented) and secrets.compare_digest(presented, expected)
+def _has_valid_key(request: Request) -> bool:
+    presented = request.headers.get(KEY_HEADER, "")
+    return bool(SUBSCRIBER_TOKEN) and bool(presented) and secrets.compare_digest(presented, SUBSCRIBER_TOKEN)
 
 
 def install_security(app: FastAPI) -> None:
@@ -74,29 +66,23 @@ def install_security(app: FastAPI) -> None:
             CORSMiddleware,
             allow_origins=origins,
             allow_methods=["GET", "POST", "DELETE"],
-            allow_headers=["Authorization", "Content-Type"],
+            allow_headers=["Authorization", "Content-Type", KEY_HEADER],
         )
 
     @app.middleware("http")
     async def gatekeeper(request: Request, call_next):
         path = request.url.path
-        if request.method == "OPTIONS" or path in PUBLIC_EXACT:
-            return await call_next(request)
 
-        for prefix, level in PROTECTED_PREFIXES:
-            if path.startswith(prefix):
-                # In production, debug routes simply don't exist.
-                if IS_PROD and prefix == "/api/debug":
-                    return JSONResponse({"detail": "Not Found"}, status_code=404)
+        # Debug routes don't exist in production.
+        if IS_PROD and path.startswith("/api/debug"):
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
 
-                auth = request.headers.get("Authorization", "")
-                token = auth.removeprefix("Bearer ").strip()
-                allowed = _token_ok(token, ADMIN_TOKEN) or (
-                    level == "subscriber" and _token_ok(token, SUBSCRIBER_TOKEN)
-                )
-                if not allowed:
-                    return JSONResponse({"detail": "Unauthorized"}, status_code=401)
-                break
+        if request.method != "OPTIONS" and path.startswith(PROTECTED_PREFIXES) and not _has_valid_key(request):
+            if STRICT_MODE == "1":
+                return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+            if STRICT_MODE == "report":
+                ua = request.headers.get("user-agent", "-")
+                print(f"[security] WOULD BLOCK {request.method} {path} ua={ua}", flush=True)
 
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"

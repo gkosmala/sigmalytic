@@ -12,6 +12,10 @@ Includes: Behavioral Intelligence Layer v1.0
 
 # test build filter frontend
 from __future__ import annotations
+try:  # adds Sigmalytic's backend key to requests (see backend_auth.py)
+    import frontend.backend_auth  # noqa: F401
+except ImportError:
+    import backend_auth  # noqa: F401
 import collections
 import hashlib
 import json
