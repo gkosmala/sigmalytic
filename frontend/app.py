@@ -193,8 +193,6 @@ def _start_all_background_refreshers():
         ("/api/radar/scores?limit=25", 90, 65, None, 24),
         ("/api/scoreboard", 120, 90, None, 32),
         ("/api/radar/divergence", 90, 65, None, 40),
-        ("/api/intelligence/status-center", 90, 65, None, 48),
-        ("/api/intelligence/opportunities?limit=25", 90, 65, None, 56),
         ("/api/radar/intelligence?limit=8", 90, 65, None, 64),
         ("/api/journal/trades", 90, 65, demo_auth_headers, 72),
         ("/api/journal/profile", 90, 65, demo_auth_headers, 80),
