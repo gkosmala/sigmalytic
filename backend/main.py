@@ -108,10 +108,12 @@ from backend.preferences_router import preferences_router
 # it's a new, working implementation of the feature.
 from backend.behavior_router import behavior_router
 # === STEP 9C COMMERCIAL ROUTE IMPORTS END ===
+from backend.security import create_app_kwargs, install_security
 app = FastAPI(
     title="Sigmalytic V2",
-    version="2.0.0",
+    version="2.0.0", **create_app_kwargs()
 )
+install_security(app)
 
 # ADDED (2026-09-20): CORS for /api/debug/* only, GET only. Built so a
 # published test page (the operator explicitly wants to click-test the
