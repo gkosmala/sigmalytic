@@ -136,24 +136,49 @@ def candidates() -> List[str]:
 
 # ───────────────────────────── top 25 by market cap ─────────────────────────────
 
-def _shares_outstanding(symbol: str) -> Dict[str, Any]:
-    """Latest total shares outstanding from SEC EDGAR (all share classes in the latest filing added together)."""
-    from backend import catalyst_engine as ce
-    cik = ce.cik_for(symbol)
-    data = ce._sec_get(f"https://data.sec.gov/api/xbrl/companyconcept/CIK{cik:010d}/dei/EntityCommonStockSharesOutstanding.json")
-    rows = [r for r in ((data or {}).get("units") or {}).get("shares") or [] if r.get("val") and r.get("end")]
+def _latest_quarter(rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The most recent figure; for period figures, the shortest (quarterly) one ending on the latest date."""
+    rows = [r for r in rows if r.get("val") and r.get("end")]
     if not rows:
-        raise ValueError("no shares-outstanding figure in SEC filings")
+        return None
     end = max(r["end"] for r in rows)
     cur = [r for r in rows if r["end"] == end]
-    filed = max(str(r.get("filed") or "") for r in cur)
-    vals = sorted({float(r["val"]) for r in cur if str(r.get("filed") or "") == filed}, reverse=True)
-    if symbol.upper().startswith("BRK"):
-        # Berkshire reports Class A and Class B separately; one Class A share converts into 1,500 Class B shares.
-        total = sum(v * 1500 if v < vals[0] / 100 else v for v in vals)
-    else:
-        total = sum(vals)
-    return {"shares": total, "as_of": end, "classes": len(vals), "name": ce._names.get(symbol.upper().replace(".", "-"), "")}
+    return max(cur, key=lambda r: (str(r.get("start") or ""), str(r.get("filed") or "")))
+
+
+def _shares_outstanding(symbol: str) -> Dict[str, Any]:
+    """Total shares for the market-cap estimate, from SEC EDGAR.
+    1) dei:EntityCommonStockSharesOutstanding (cover page, all classes in the latest filing added together);
+    2) companies with several share classes (Alphabet, Meta, Palantir, AppLovin ...) report that figure per class, which the
+       SEC's API leaves out, so the fallback is us-gaap:WeightedAverageNumberOfDilutedSharesOutstanding, the total for all
+       classes for the latest quarter (within a few percent of shares outstanding, which is enough to rank by size)."""
+    from backend import catalyst_engine as ce
+    cik = ce.cik_for(symbol)
+    name = ce._names.get(symbol.upper().replace(".", "-"), "")
+    base = f"https://data.sec.gov/api/xbrl/companyconcept/CIK{cik:010d}"
+    rows: List[Dict[str, Any]] = []
+    try:
+        data = ce._sec_get(f"{base}/dei/EntityCommonStockSharesOutstanding.json")
+        rows = [r for r in ((data or {}).get("units") or {}).get("shares") or [] if r.get("val") and r.get("end")]
+    except Exception:
+        rows = []
+    if rows:
+        end = max(r["end"] for r in rows)
+        cur = [r for r in rows if r["end"] == end]
+        filed = max(str(r.get("filed") or "") for r in cur)
+        vals = sorted({float(r["val"]) for r in cur if str(r.get("filed") or "") == filed}, reverse=True)
+        if symbol.upper().startswith("BRK"):
+            # Berkshire reports Class A and Class B separately; one Class A share converts into 1,500 Class B shares.
+            total = sum(v * 1500 if v < vals[0] / 100 else v for v in vals)
+        else:
+            total = sum(vals)
+        return {"shares": total, "as_of": end, "classes": len(vals), "name": name, "basis": "shares outstanding"}
+    data = ce._sec_get(f"{base}/us-gaap/WeightedAverageNumberOfDilutedSharesOutstanding.json")
+    best = _latest_quarter(((data or {}).get("units") or {}).get("shares") or [])
+    if not best:
+        raise ValueError("no share count in SEC filings")
+    return {"shares": float(best["val"]), "as_of": best["end"], "classes": 0, "name": name,
+            "basis": "diluted weighted average, all classes"}
 
 
 def _prices(symbols: List[str]) -> Dict[str, float]:
