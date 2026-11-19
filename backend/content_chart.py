@@ -73,6 +73,56 @@ def _logo_path() -> Optional[str]:
     return None
 
 
+_LOGO_CACHE: List[Any] = []
+
+
+def logo_image():
+    """The logo as drawn on charts and reports: bright lettering plus the trademark symbol after the wordmark.
+    Returns a float RGB(A) array, or None when there is no logo file. Built once and reused."""
+    if _LOGO_CACHE:
+        return _LOGO_CACHE[0]
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.image as mpimg
+    path = _logo_path()
+    out = None
+    if path:
+        out = _pop_lettering(mpimg.imread(path))
+        try:
+            import numpy as np
+            from PIL import Image, ImageDraw, ImageFont
+            from matplotlib import font_manager
+            a = np.clip(np.asarray(out, dtype=float), 0, 1)
+            im = Image.fromarray((a[..., :3] * 255).astype("uint8"))
+            px = np.asarray(im).astype(int)
+            green = (px[..., 1] > px[..., 0] * 1.12) & (px[..., 1] > 120)
+            h = green.shape[0]
+            band = green[int(h * 0.2):int(h * 0.5)]                       # the top line of lettering ("SIGMALYTIC QUANT")
+            cols = np.where(band.any(axis=0))[0]
+            rows = np.where(green.any(axis=1))[0]
+            if len(cols) and len(rows):
+                size = max(12, int(h * 0.10))
+                font = ImageFont.truetype(font_manager.findfont("DejaVu Serif"), size)
+                ImageDraw.Draw(im).text((int(cols.max()) + max(3, size // 5), int(rows.min()) - size // 6), "™", font=font,
+                                        fill=tuple(int(v * 255) for v in LOGO_GREEN))
+                out = np.asarray(im).astype(float) / 255.0
+        except Exception:
+            pass                                                         # no Pillow/font: the logo is used without the mark
+    _LOGO_CACHE.append(out)
+    return out
+
+
+def logo_png_bytes() -> Optional[bytes]:
+    """logo_image() as PNG bytes (used by the Report Pack PDF)."""
+    import matplotlib.image as mpimg
+    img = logo_image()
+    if img is None:
+        return None
+    buf = io.BytesIO()
+    mpimg.imsave(buf, img, format="png")
+    return buf.getvalue()
+
+
 def _fit_lines(text: str, width: int = 46, max_lines: int = 5) -> List[str]:
     """Wraps text for a panel; if it is too long, whole trailing sentences are dropped rather than cutting mid-sentence."""
     import re
@@ -123,14 +173,14 @@ def render_share_image(facts: Dict[str, Any], bars: List[Sequence[Any]], title: 
     # ── header: logo, title, dates, tagline
     logo = _logo_path()
     if logo:
-        lax = fig.add_axes([0.014, 0.832, 0.235, 0.15]); lax.set_axis_off(); lax.imshow(_pop_lettering(mpimg.imread(logo)), interpolation="lanczos")
+        lax = fig.add_axes([0.014, 0.832, 0.235, 0.15]); lax.set_axis_off(); lax.imshow(logo_image(), interpolation="lanczos")
     else:
         lax = fig.add_axes([0.016, 0.835, 0.2, 0.15]); lax.set_xlim(0, 2.1); lax.set_ylim(0, 1); lax.set_axis_off()
         lax.set_aspect("auto")
         lax.add_patch(Circle((0.3, 0.52), 0.28, fc="#10265a", ec=GOLD, linewidth=2.6))
         lax.text(0.3, 0.50, "Σ", color=GOLD, fontsize=44, fontweight="bold", ha="center", va="center")
         lax.text(0.68, 0.70, "Sigmalytic Quant", color=TXT, fontsize=19, fontweight="bold", va="center")
-        lax.text(0.68, 0.45, "CORPORATION", color=GOLD, fontsize=17, fontweight="bold", va="center")
+        lax.text(0.68, 0.45, "CORPORATION™", color=GOLD, fontsize=17, fontweight="bold", va="center")
         lax.text(0.68, 0.20, "DATA · DISCIPLINE · ALPHA", color=MUTED, fontsize=9.5, va="center")
     ttl = title or f"{sym} at ${last:,.2f}"
     tt = fig.text(0.54, 0.925, _money_text(ttl), color=TXT, fontsize=27, fontweight="bold", ha="center", va="center")
@@ -264,7 +314,7 @@ def render_share_image(facts: Dict[str, Any], bars: List[Sequence[Any]], title: 
 
     fig.text(0.02, 0.035, "www.sigmalyticquantcorp.com", color=WHITE, fontsize=13, fontweight="bold", va="center")
     year = (facts.get("as_of") or "")[:4] or "2026"
-    fig.text(0.985, 0.035, f"© {year} Sigmalytic Quant Corporation. All rights reserved.", color=WHITE, fontsize=13, fontweight="bold",
+    fig.text(0.985, 0.035, f"© {year} Sigmalytic Quant Corporation™. All rights reserved.", color=WHITE, fontsize=13, fontweight="bold",
              ha="right", va="center")
     fig.canvas.draw()                                         # tick labels exist only after a draw; make them bold
     for a_ in (ax, axv):

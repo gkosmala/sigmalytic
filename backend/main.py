@@ -3112,6 +3112,48 @@ def content_hub_generate(payload: dict, _admin: str = Depends(require_admin)):
     return out
 
 
+@app.get("/api/admin/report-pack/top")
+def report_pack_top(refresh: bool = False, _admin: str = Depends(require_admin)):
+    """Top 25 Report Pack (admin only): the 25 largest U.S. companies by estimated market cap. See backend/report_pack.py."""
+    from backend import report_pack
+    try:
+        return report_pack.top_list(refresh=bool(refresh))
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:300]}
+
+
+@app.post("/api/admin/report-pack/start")
+def report_pack_start(payload: dict, _admin: str = Depends(require_admin)):
+    """Starts or resumes today's Top 25 Report Pack in the background. Returns its status at once."""
+    from backend import report_pack
+    p = payload or {}
+    try:
+        return report_pack.start(use_ai=bool(p.get("use_ai", True)), restart=bool(p.get("restart")),
+                                 retry_failed=bool(p.get("retry_failed")), size=int(p.get("size") or 25))
+    except Exception as exc:
+        return {"ok": False, "state": "failed", "error": str(exc)[:300]}
+
+
+@app.get("/api/admin/report-pack/status")
+def report_pack_status(_admin: str = Depends(require_admin)):
+    from backend import report_pack
+    try:
+        return report_pack.status()
+    except Exception as exc:
+        return {"ok": False, "state": "failed", "error": str(exc)[:300]}
+
+
+@app.get("/api/admin/report-pack/pdf")
+def report_pack_pdf(_admin: str = Depends(require_admin)):
+    from fastapi.responses import Response as _PackResponse
+    from backend import report_pack
+    data = report_pack.pdf_bytes()
+    if not data:
+        return _PackResponse(content="No finished report pack for today.", status_code=404)
+    return _PackResponse(content=data, media_type="application/pdf",
+                         headers={"Content-Disposition": 'attachment; filename="Sigmalytic_Top25_Report_Pack.pdf"'})
+
+
 @app.post("/api/admin/content-hub/check")
 def content_hub_check(payload: dict, _admin: str = Depends(require_admin)):
     """

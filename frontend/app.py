@@ -73,6 +73,11 @@ except Exception:
     build_trade_journal_tab = None
 
 try:
+    from report_pack_ui import build_block as _report_pack_build, register as _report_pack_register
+except Exception:
+    _report_pack_build = _report_pack_register = None
+
+try:
     from content_hub_ui import render_checklist as _content_hub_checklist
 except Exception:
     _content_hub_checklist = None
@@ -6020,6 +6025,8 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                    "fontSize": "12px", "fontFamily": "DM Mono, monospace", "lineHeight": "1.7"}),
     ], sx={"marginBottom": "16px"})
 
+    report_pack_block = _report_pack_build(_admin_card) if _report_pack_build else html.Div()  # Top 25 Report Pack
+
     # ── Content Hub -- blog + social teaser drafts for one symbol (drafts only, nothing posts). ──
     content_hub_block = _admin_card([
         html.Div("CONTENT HUB", style={"fontSize": "12px", "fontWeight": "800", "color": WHITE, "marginBottom": "6px"}),
@@ -6540,6 +6547,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             platform_review_block,
             content_hub_block,
             report_hub_block,
+            report_pack_block,
             catalyst_engine_block,
             ma_study_block,
             astro_research_block,
@@ -6808,6 +6816,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         platform_review_block,
         content_hub_block,
         report_hub_block,
+        report_pack_block,
         catalyst_engine_block,
         ma_study_block,
         astro_research_block,
@@ -11924,6 +11933,10 @@ def render_assistant_thread(history):
             out.append(html.Div([html.Div(m.get("content", ""), style={"color": YELLOW_DIM}),
                                  _assistant_meta_line(m.get("meta"))], style={"maxWidth": "95%"}))
     return html.Div(out, style={"display": "flex", "flexDirection": "column", "gap": "12px"})
+
+
+if _report_pack_register is not None:  # Top 25 Report Pack callbacks (frontend/report_pack_ui.py)
+    _report_pack_register(app, req, BACKEND_HTTP, _auth_headers)
 
 
 @app.callback(Output("content-hub-result", "children"),
