@@ -87,7 +87,8 @@ _METHOD = re.compile(r"\b(?:algorithm\w*|scor(?:e|es|ed|ing)\b|touch count|lookb
                      r"calibrat\w*|threshold\w*|signal engine|proprietary (?:model|formula|score))", re.IGNORECASE)
 
 WEBSITE = "https://sigmalyticquantcorp.com/"
-_TM = re.compile(r"Sigmalytic Quant (Corporation|AI)(?!™)")
+EMAIL = "teams@sigmalyticquantcorp.com"
+_TM = re.compile(r"Sigmalytic Quant (?:Corporation|AI)(?!™)", re.IGNORECASE)   # also the all-capitals form
 
 _lock = threading.RLock()
 _thread: Optional[threading.Thread] = None
@@ -294,6 +295,12 @@ _GEO_WORDS = re.compile(r"\b(tariff\w*|sanction\w*|war|military|conflict|export 
                         r"embargo|invasion|taiwan|ukraine|russia|iran|middle east|national security)\b", re.IGNORECASE)
 
 
+def _shutting_down(exc: Optional[BaseException] = None) -> bool:
+    """True while the server is replacing this worker process (gunicorn restarts it after a set number of requests)."""
+    import sys
+    return sys.is_finalizing() or (exc is not None and "interpreter shutdown" in str(exc))
+
+
 class CreditError(RuntimeError):
     """The Anthropic account has no credit left; the pack stops instead of failing every remaining report."""
 
@@ -382,7 +389,10 @@ def world_items(symbol: str, name: str) -> Dict[str, List[Dict[str, Any]]]:
                              params={"query": q, "mode": "ArtList", "format": "json", "maxrecords": "25",
                                      "timespan": f"{NEWS_DAYS}d", "sort": "DateDesc"}, timeout=25)
             arts = (r.json() or {}).get("articles") or [] if r.ok and r.text.strip().startswith("{") else []
-        except Exception:
+            print(f"[report_pack] GDELT {symbol} ({word}): HTTP {r.status_code}, {len(arts)} articles"
+                  + ("" if r.ok and r.text.strip().startswith("{") else f", reply: {r.text[:120]!r}"), flush=True)
+        except Exception as e:
+            print(f"[report_pack] GDELT {symbol} ({word}) failed: {str(e)[:160]}", flush=True)
             arts = []
         _GDELT_LAST[0] = time.time()
     out: Dict[str, List[Dict[str, Any]]] = {"international": [], "geopolitical": []}
@@ -406,7 +416,7 @@ def scan_news(symbol: str, name: str) -> Dict[str, List[Dict[str, Any]]]:
     return news
 
 
-def _haiku(system: str, user: str, max_tokens: int = 1800) -> Dict[str, Any]:
+def _haiku(system: str, user: str, max_tokens: int = 2500) -> Dict[str, Any]:
     import requests
     from backend import content_hub as ch
     key = os.getenv("ANTHROPIC_API_KEY", "")
@@ -466,12 +476,18 @@ def write_news(symbol: str, news: Dict[str, List[Dict[str, Any]]], use_ai: bool)
                 "that are not about this company or its business. Set a category to null if no item supports it. "
                 "Return JSON: {\"company\": {\"text\": str, \"ids\": [str]} | null, \"us\": ..., \"international\": ..., "
                 "\"geopolitical\": ...} where ids lists the item ids each paragraph is based on.\n\nITEMS:\n" + "\n".join(lines))
-        try:
-            reply = _haiku(system, user)
-        except CreditError:
-            raise
-        except Exception as e:
-            reply = {"_error": str(e)[:160]}
+        reply = None
+        for attempt in range(2):                # an unreadable reply is retried once (costs about a tenth of a cent)
+            try:
+                reply = _haiku(system, user if attempt == 0 else
+                               user + "\n\nYour previous reply could not be read. Reply with the JSON object only.")
+                break
+            except CreditError:
+                raise
+            except Exception as e:
+                reply = {"_error": str(e)[:160]}
+                if "JSON" not in str(e):
+                    break
         for cat in ("company", "us", "international", "geopolitical"):
             v = reply.get(cat) if isinstance(reply, dict) else None
             ids = [i for i in (v or {}).get("ids") or [] if i in numbered] if isinstance(v, dict) else []
@@ -501,6 +517,7 @@ def build_public_report(symbol: str, use_ai: bool = True, name: str = "") -> Dic
         bars = f.pop("_chart_bars", None)
         blog = ch.generate_blog(f, use_ai=False)
         news_raw = scan_news(symbol, name)
+        print(f"[report_pack] {symbol} news items: " + ", ".join(f"{k}={len(v)}" for k, v in news_raw.items()), flush=True)
         news = write_news(symbol, news_raw, use_ai)
     finally:
         ch._USAGE.reset(t_usage)
@@ -621,6 +638,7 @@ def _run(day: str) -> None:
             return rep
 
         credit_msg = None
+        interrupted = False
         with ThreadPoolExecutor(max_workers=WORKERS) as pool:
             futs = {pool.submit(one, s): s for s in pending}
             for fut in as_completed(futs):
@@ -639,10 +657,19 @@ def _run(day: str) -> None:
                     for other in futs:
                         other.cancel()
                 except Exception as e:
+                    if _shutting_down(e):           # the worker is being replaced: leave it queued, resume later
+                        interrupted = True
+                        for other in futs:
+                            other.cancel()
+                        break
                     info = {"state": "failed", "note": str(e)[:300]}
                 if fut.cancelled():
                     continue
                 _update(day, lambda j, s=sym, i=info: j["items"][s].update({**i, "finished": _now_iso()}))
+        if interrupted or _shutting_down():
+            # No status change: the heartbeat stops, and the next status check (in the new worker) sees a stale job and
+            # resumes it; reports already saved are reused, items left "building" are queued again by start().
+            return
         if credit_msg:
             def _requeue(j):
                 for it in (j.get("items") or {}).values():
@@ -659,7 +686,8 @@ def _run(day: str) -> None:
         _update(day, lambda j: j.update({"state": "done", "pdf_ready": True, "pdf_engine": engine, "finished_at": _now_iso(),
                                          "pdf_bytes": len(pdf)}))
     except Exception as e:
-        _update(day, lambda j: j.update({"state": "failed", "error": str(e)[:400]}))
+        if not _shutting_down(e):
+            _update(day, lambda j: j.update({"state": "failed", "error": str(e)[:400]}))
     finally:
         stop.set()
 
@@ -765,8 +793,36 @@ body { font-family: 'DejaVu Sans', Arial, sans-serif; font-size: 9.6pt; line-hei
 h1 { font-size: 17pt; margin: 0 0 4px 0; color: #0b1a33; }
 h2 { font-size: 11.5pt; margin: 14px 0 4px 0; color: #12305f; border-bottom: 1px solid #dbe4f3; padding-bottom: 2px; }
 p { margin: 0 0 7px 0; }
+@page welcome { margin: 0; @bottom-left { content: none; } @bottom-right { content: none; } }
+.welcome { page: welcome; page-break-after: always; font-family: 'DejaVu Serif', Georgia, serif; color: #0f172a; }
+.welcome .band { background: #111c33; padding: 0.42in 0.6in 0.34in 0.6in; border-bottom: 4px solid #c9a227; }
+.welcome .band table { width: 100%; border-collapse: collapse; }
+.welcome .band img { height: 0.95in; }
+.welcome .band .meta { text-align: right; vertical-align: bottom; color: #e2e8f0; font-family: 'DejaVu Sans', Arial, sans-serif;
+                       font-size: 8.5pt; letter-spacing: 1.5px; line-height: 1.7; }
+.welcome .band .meta b { color: #c9a227; font-size: 9.5pt; }
+.welcome .body { padding: 0.32in 0.6in 0 0.6in; }
+.welcome .eyebrow { font-family: 'DejaVu Sans', Arial, sans-serif; font-size: 8.5pt; letter-spacing: 2.5px; color: #8a6d12;
+                    font-weight: bold; }
+.welcome h1 { font-size: 25pt; margin: 4px 0 10px 0; color: #0d1b3a; font-weight: bold; }
+.welcome .lead { font-size: 10.6pt; line-height: 1.62; margin: 0 0 8px 0; }
+.welcome .facts { width: 100%; border-collapse: collapse; margin: 14px 0 16px 0; border-top: 1px solid #0d1b3a;
+                  border-bottom: 1px solid #0d1b3a; font-family: 'DejaVu Sans', Arial, sans-serif; }
+.welcome .facts td { padding: 7px 8px; vertical-align: top; width: 25%; border-right: 1px solid #cbd5e1; }
+.welcome .facts td:last-child { border-right: none; }
+.welcome .facts .k { font-size: 7pt; letter-spacing: 1.4px; color: #64748b; text-transform: uppercase; }
+.welcome .facts .v { font-size: 10.5pt; font-weight: bold; color: #0d1b3a; margin-top: 2px; }
+.welcome .cols { width: 100%; border-collapse: separate; border-spacing: 12px 0; margin: 0 -12px; }
+.welcome .cols td { vertical-align: top; width: 33.3%; border-top: 3px solid #c9a227; padding-top: 7px; }
+.welcome .cols h3 { font-size: 11.5pt; margin: 0 0 5px 0; color: #0d1b3a; }
+.welcome .cols p { font-size: 9.2pt; line-height: 1.55; margin: 0; }
+.welcome .contact { margin-top: 16px; font-family: 'DejaVu Sans', Arial, sans-serif; font-size: 9pt; color: #0d1b3a; }
+.welcome .legal { margin-top: 18px; padding-top: 8px; border-top: 1px solid #cbd5e1; font-family: 'DejaVu Sans', Arial, sans-serif;
+                  font-size: 7.4pt; line-height: 1.5; color: #475569; }
+.welcome .legal p { margin: 0 0 5px 0; }
 .cover { page-break-after: always; }
 .cover .logo { width: 100%; border-radius: 6px; margin-top: 0.5in; }
+.cover h1 { margin-top: 4px; }
 .cover .brand { font-size: 10pt; letter-spacing: 1px; color: #2a5bd7; font-weight: bold; margin-top: 18px; }
 .rlogo { height: 0.42in; border-radius: 4px; margin-bottom: 6px; }
 .site { font-size: 8.5pt; }
@@ -837,6 +893,59 @@ def _report_html(rep: Dict[str, Any], idx: int) -> str:
     return head + "".join(body) + tail
 
 
+def _welcome_html(day: str, reps: List[Dict[str, Any]], heading: str) -> str:
+    """Page 1: the welcome letter, laid out like the opening page of a financial report."""
+    from backend import content_hub as ch
+    esc = _html.escape
+    logo = _logo_uri()
+    year = day[:4]
+    data_through = max((r.get("as_of") or "") for r in reps)
+    logo_html = (f"<img src='{logo}' alt='Sigmalytic Quant Corporation'>" if logo
+                 else "<span style='color:#c9a227;font-size:18pt;font-weight:bold'>SIGMALYTIC QUANT CORPORATION</span>")
+    mail = f"<a href='mailto:{EMAIL}'>{EMAIL}</a>"
+    return (
+        "<section class='welcome'>"
+        f"<div class='band'><table><tr><td>{logo_html}</td>"
+        f"<td class='meta'><b>MARKET STRUCTURE REPORT PACK</b><br>{esc(heading.upper())}<br>{esc(ch._long_date(day).upper())}</td>"
+        "</tr></table></div>"
+        "<div class='body'>"
+        "<div class='eyebrow'>SIGMALYTIC QUANT CORPORATION</div>"
+        "<h1>Welcome to Sigmalytic</h1>"
+        "<p class='lead'>We built Sigmalytic because we believe a tool is only as good as the outcomes it helps create for "
+        "the people using it. Your success is the whole point — we don't measure ours any other way.</p>"
+        "<p class='lead'>Markets generate thousands of signals every day. Sigmalytic helps you sort through the noise, save "
+        "time, and focus on potential Trades About to Happen — so you can explore opportunities with a clearer view of what "
+        "the market is doing, and make more informed decisions with confidence.</p>"
+        "<table class='facts'><tr>"
+        f"<td><div class='k'>Companies covered</div><div class='v'>{len(reps)}</div></td>"
+        f"<td><div class='k'>Market data through</div><div class='v'>{esc(ch._long_date(data_through) if data_through else '')}</div></td>"
+        "<td><div class='k'>Prepared by</div><div class='v'>Sigmalytic Quant AI</div></td>"
+        "<td><div class='k'>Data sources</div><div class='v' style='font-size:8.5pt'>Alpaca Markets · SEC EDGAR · FRED · GDELT</div></td>"
+        "</tr></table>"
+        "<table class='cols'><tr>"
+        "<td><h3>Learn from every decision</h3><p>Behavioral Intelligence helps you see the patterns behind your own "
+        "decisions and outcomes. Use that feedback to recognize avoidable mistakes, build better habits, and strengthen your "
+        "process — trade by trade, day by day.</p></td>"
+        "<td><h3>Stay informed</h3><p>Start your day with the morning audio report, follow your alerts as they come in, and "
+        "enable the nightly report in Preferences for email delivery. Wherever your day takes you, Sigmalytic keeps you "
+        "connected to the market.</p></td>"
+        "<td><h3>We're listening</h3><p>Your feedback shapes what we build next. If something's working well, or if you see "
+        f"a way we can do better, we want to hear it. Email us at {mail} — we read every message and reply within 24–48 "
+        "hours.</p></td>"
+        "</tr></table>"
+        f"<div class='contact'><b>Contact:</b> {mail} &nbsp;·&nbsp; <b>Web:</b> <a href='{WEBSITE}'>{WEBSITE}</a></div>"
+        "<div class='legal'>"
+        f"<p>© {esc(year)} Sigmalytic Quant Corporation. All rights reserved.</p>"
+        "<p>Sigmalytic's original application design, software and source code, analyses, reports, text, charts, and graphics "
+        "are protected by copyright. Copying, modifying, distributing, or reusing these materials requires prior written "
+        "permission, except as permitted by law or an applicable license. Third-party market data and licensed materials "
+        "remain the property of their respective rights holders.</p>"
+        "<p>Sigmalytic Quant Corporation and Sigmalytic Quant AI are trademarks of Sigmalytic Quant Corporation. All other "
+        "names and marks are the property of their respective owners.</p>"
+        f"<p>{esc(ch.DISCLAIMER)}</p>"
+        "</div></div></section>")
+
+
 def assemble_pdf(day: str, job: Dict[str, Any]):
     from backend import content_hub as ch
     esc = _html.escape
@@ -860,8 +969,9 @@ def assemble_pdf(day: str, job: Dict[str, Any]):
             if missing else "")
     logo = _logo_uri()
     cover = (f"<section class='cover'>"
-             + (f"<img class='logo' src='{logo}' alt='Sigmalytic Quant Corporation'>" if logo
-                else "<div class='brand' style='margin-top:1.2in'>SIGMALYTIC QUANT CORPORATION</div>")
+             + (f"<img class='rlogo' src='{logo}' alt='Sigmalytic Quant Corporation'>" if logo
+                else "<div class='brand'>SIGMALYTIC QUANT CORPORATION</div>")
+             + "<div class='brand'>CONTENTS</div>"
              + f"<h1>{esc(heading)}</h1>"
              f"<div class='sub'>Market Structure Reports by Sigmalytic Quant AI · {esc(long_day)}</div>"
              f"<div class='sub'><a href='{WEBSITE}'>{WEBSITE}</a></div>"
@@ -871,7 +981,7 @@ def assemble_pdf(day: str, job: Dict[str, Any]):
              f"<div class='toc'><table>{rows}</table></div>{miss}"
              f"<p class='disclaimer'>{esc(ch.DISCLAIMER)}</p></section>")
     doc = (f"<!DOCTYPE html><html><head><meta charset='utf-8'><title>Sigmalytic Top 25 Report Pack {esc(day)}</title>"
-           f"<style>{_CSS}</style></head><body>{cover}" + "".join(_report_html(r, i) for i, r in enumerate(reps, 1))
+           f"<style>{_CSS}</style></head><body>{_welcome_html(day, reps, heading)}{cover}" + "".join(_report_html(r, i) for i, r in enumerate(reps, 1))
            + "</body></html>")
     doc = brand_tm(doc)
     if _BLOCKED.search(re.sub(r"data:image/png;base64,[A-Za-z0-9+/=]+", "", doc)):
