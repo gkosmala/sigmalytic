@@ -26,8 +26,9 @@ def build_block(admin_card):
         html.Div("Builds one public market-structure report for each of the largest U.S. companies by market "
                  "capitalization and combines them into one PDF: a cover page with contents, then each report with its "
                  "chart, key levels, recent news and the disclaimer. The analysis is written from the platform's data at no "
-                 "cost. News is scanned free from SEC filings, Alpaca/Benzinga headlines, FRED economic data and the GDELT "
-                 "news index; Claude Haiku then writes the short news paragraphs (about a cent or less per report). "
+                 "cost. News is scanned free from SEC filings, Alpaca/Benzinga headlines (sorted into company, international "
+                 "and geopolitical news) and FRED economic data; Claude Haiku then writes the short news paragraphs "
+                 "(about a tenth of a cent per report). "
                  "The reports never name the platform's methods; any report that still contains a blocked word is left "
                  "out of the PDF. About a minute per report; it keeps running if you leave this page, and reports already "
                  "finished today are reused at no new cost.",

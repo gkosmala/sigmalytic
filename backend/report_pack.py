@@ -16,7 +16,8 @@ What each report contains, and what it costs
     * News, scanned for free:
         company       SEC 8-K filings (public records) + Alpaca/Benzinga headlines tagged with the symbol
         U.S. economy  FRED (Federal Reserve Bank of St. Louis): CPI, unemployment, fed funds rate, 10-year yield
-        international / geopolitical   the open GDELT news index, headlines that name the company (GDELT attribution)
+        international / geopolitical   the same Alpaca/Benzinga headlines, sorted by topic: tariffs, sanctions, export
+                      rules, conflicts -> geopolitical; Europe, Asia and other overseas business -> international
     * News paragraphs: Claude Haiku (REPORT_PACK_NEWS_MODEL) writes 1-3 sentences per category ONLY from the scanned
       items, about a cent or less per report. A paragraph with a number not in its items is replaced by the headline list.
       No AI key, an AI error, or "use_ai" off -> the headlines are listed instead.
@@ -288,9 +289,10 @@ def public_facts(f: Dict[str, Any]) -> Dict[str, Any]:
 NEWS_MODEL = os.getenv("REPORT_PACK_NEWS_MODEL", "claude-haiku-5-5")
 NEWS_DAYS = int(os.getenv("REPORT_PACK_NEWS_DAYS", "7") or 7)
 FILING_DAYS = int(os.getenv("REPORT_PACK_FILING_DAYS", "21") or 21)
-_GDELT_LOCK = threading.Lock()
-_GDELT_LAST = [0.0]
 _FRED_CACHE: Dict[str, Any] = {}
+_INTL_WORDS = re.compile(r"\b(europe\w*|eu|china|chinese|japan\w*|india\w*|asia\w*|korea\w*|germany|german|france|french|"
+                         r"u\.?k\.?|britain|british|canada|canadian|mexico|mexican|brazil\w*|latin america|africa\w*|"
+                         r"saudi|gulf|australia\w*|overseas|international\w*|global\w*|worldwide|abroad)\b", re.IGNORECASE)
 _GEO_WORDS = re.compile(r"\b(tariff\w*|sanction\w*|war|military|conflict|export (?:ban|control\w*)|geopolit\w*|"
                         r"embargo|invasion|taiwan|ukraine|russia|iran|middle east|national security)\b", re.IGNORECASE)
 
@@ -364,7 +366,7 @@ def company_items(symbol: str) -> List[Dict[str, Any]]:
         news = ce.fetch_news(symbol, now - timedelta(days=NEWS_DAYS), now, pages=1)
         news.sort(key=lambda n: (len(n.get("symbols") or []), -(datetime.fromisoformat(
             str(n.get("created_at", "1970-01-01T00:00:00Z")).replace("Z", "+00:00")).timestamp())))
-        for n in news[:8]:
+        for n in news[:20]:
             if n.get("headline") and n.get("url"):
                 out.append({"text": str(n["headline"]).strip(), "source": n.get("source", "benzinga").title(),
                             "date": str(n.get("created_at", ""))[:10], "url": n["url"]})
@@ -373,46 +375,24 @@ def company_items(symbol: str) -> List[Dict[str, Any]]:
     return out
 
 
-def world_items(symbol: str, name: str) -> Dict[str, List[Dict[str, Any]]]:
-    """International and geopolitical coverage that names the company, from the open GDELT index (attribution: GDELT Project)."""
-    import requests
-    from backend import catalyst_engine as ce
-    word = ce.short_name(symbol) or (name.split()[0].strip(",.") if name else symbol)
-    q = (f'"{word}" (tariff OR tariffs OR sanctions OR export OR China OR Europe OR regulators OR antitrust OR war) '
-         "sourcelang:english")
-    with _GDELT_LOCK:                                  # GDELT asks for no more than one request every 5 seconds
-        wait = 5.5 - (time.time() - _GDELT_LAST[0])
-        if wait > 0:
-            time.sleep(wait)
-        try:
-            r = requests.get("https://api.gdeltproject.org/api/v2/doc/doc",
-                             params={"query": q, "mode": "ArtList", "format": "json", "maxrecords": "25",
-                                     "timespan": f"{NEWS_DAYS}d", "sort": "DateDesc"}, timeout=25)
-            arts = (r.json() or {}).get("articles") or [] if r.ok and r.text.strip().startswith("{") else []
-            print(f"[report_pack] GDELT {symbol} ({word}): HTTP {r.status_code}, {len(arts)} articles"
-                  + ("" if r.ok and r.text.strip().startswith("{") else f", reply: {r.text[:120]!r}"), flush=True)
-        except Exception as e:
-            print(f"[report_pack] GDELT {symbol} ({word}) failed: {str(e)[:160]}", flush=True)
-            arts = []
-        _GDELT_LAST[0] = time.time()
-    out: Dict[str, List[Dict[str, Any]]] = {"international": [], "geopolitical": []}
-    seen = set()
-    for a in arts:
-        title = str(a.get("title") or "").strip()
-        if not title or not a.get("url") or word.lower() not in title.lower() or title.lower() in seen:
-            continue
-        seen.add(title.lower())
-        key = "geopolitical" if _GEO_WORDS.search(title) else "international"
-        if len(out[key]) < 6:
-            sd = str(a.get("seendate") or "")
-            out[key].append({"text": title, "source": str(a.get("domain") or "GDELT"),
-                             "date": f"{sd[:4]}-{sd[4:6]}-{sd[6:8]}" if len(sd) >= 8 else "", "url": a["url"]})
+def _sort_headlines(items: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+    """Splits the company's headlines by topic. SEC filings always stay with the company news."""
+    out: Dict[str, List[Dict[str, Any]]] = {"company": [], "international": [], "geopolitical": []}
+    for it in items:
+        if it.get("source") != "SEC EDGAR" and _GEO_WORDS.search(it["text"]):
+            key = "geopolitical"
+        elif it.get("source") != "SEC EDGAR" and _INTL_WORDS.search(it["text"]):
+            key = "international"
+        else:
+            key = "company"
+        if len(out[key]) < (10 if key == "company" else 5):
+            out[key].append(it)
     return out
 
 
 def scan_news(symbol: str, name: str) -> Dict[str, List[Dict[str, Any]]]:
-    news = {"company": company_items(symbol), "us": us_economy_items()}
-    news.update(world_items(symbol, name))
+    news = _sort_headlines(company_items(symbol))
+    news["us"] = us_economy_items()
     return news
 
 
@@ -540,8 +520,6 @@ def build_public_report(symbol: str, use_ai: bool = True, name: str = "") -> Dic
                 sources.append({"title": f"{it['source']}: {it['text'][:110]}" if it else u, "url": u})
     at = next((i for i, x in enumerate(sections) if x["heading"] == "Sigmalytic Summary"), len(sections))
     sections = sections[:at] + news_secs + sections[at:]
-    if news_raw.get("international") or news_raw.get("geopolitical"):
-        sources.append({"title": "International coverage located through the GDELT Project", "url": "https://www.gdeltproject.org/"})
 
     title = scrub(blog.get("title"))
     if not title or _BLOCKED.search(title):
@@ -920,7 +898,7 @@ def _welcome_html(day: str, reps: List[Dict[str, Any]], heading: str) -> str:
         f"<td><div class='k'>Companies covered</div><div class='v'>{len(reps)}</div></td>"
         f"<td><div class='k'>Market data through</div><div class='v'>{esc(ch._long_date(data_through) if data_through else '')}</div></td>"
         "<td><div class='k'>Prepared by</div><div class='v'>Sigmalytic Quant AI</div></td>"
-        "<td><div class='k'>Data sources</div><div class='v' style='font-size:8.5pt'>Alpaca Markets · SEC EDGAR · FRED · GDELT</div></td>"
+        "<td><div class='k'>Data sources</div><div class='v' style='font-size:8.5pt'>Alpaca Markets · Benzinga · SEC EDGAR · FRED</div></td>"
         "</tr></table>"
         "<table class='cols'><tr>"
         "<td><h3>Learn from every decision</h3><p>Behavioral Intelligence helps you see the patterns behind your own "
