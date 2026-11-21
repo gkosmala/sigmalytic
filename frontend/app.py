@@ -78,6 +78,11 @@ except Exception:
     _report_pack_build = _report_pack_register = None
 
 try:
+    from paper_trading_ui import build_block as _paper_build, register as _paper_register
+except Exception:
+    _paper_build = _paper_register = None
+
+try:
     from content_hub_ui import render_checklist as _content_hub_checklist
 except Exception:
     _content_hub_checklist = None
@@ -6026,6 +6031,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     ], sx={"marginBottom": "16px"})
 
     report_pack_block = _report_pack_build(_admin_card) if _report_pack_build else html.Div()  # Top 25 Report Pack
+    paper_trading_block = _paper_build(_admin_card) if _paper_build else html.Div()  # Admin Paper Trading
 
     # ── Content Hub -- blog + social teaser drafts for one symbol (drafts only, nothing posts). ──
     content_hub_block = _admin_card([
@@ -6548,6 +6554,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             content_hub_block,
             report_hub_block,
             report_pack_block,
+            paper_trading_block,
             catalyst_engine_block,
             ma_study_block,
             astro_research_block,
@@ -6817,6 +6824,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         content_hub_block,
         report_hub_block,
         report_pack_block,
+        paper_trading_block,
         catalyst_engine_block,
         ma_study_block,
         astro_research_block,
@@ -11937,6 +11945,9 @@ def render_assistant_thread(history):
 
 if _report_pack_register is not None:  # Top 25 Report Pack callbacks (frontend/report_pack_ui.py)
     _report_pack_register(app, req, BACKEND_HTTP, _auth_headers)
+
+if _paper_register is not None:  # Admin Paper Trading callbacks (frontend/paper_trading_ui.py)
+    _paper_register(app, req, BACKEND_HTTP, _auth_headers)
 
 
 @app.callback(Output("content-hub-result", "children"),

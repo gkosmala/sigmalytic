@@ -3154,6 +3154,63 @@ def report_pack_pdf(_admin: str = Depends(require_admin)):
                          headers={"Content-Disposition": 'attachment; filename="Sigmalytic_Top25_Report_Pack.pdf"'})
 
 
+@app.get("/api/admin/paper/summary")
+def paper_summary(_admin: str = Depends(require_admin)):
+    """Admin Paper Trading (admin only): the simulated test account. See backend/paper_trader.py."""
+    from backend import paper_trader
+    try:
+        return paper_trader.summary()
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:300]}
+
+
+@app.get("/api/admin/paper/journal")
+def paper_journal(limit: int = 300, _admin: str = Depends(require_admin)):
+    from backend import paper_trader
+    try:
+        return paper_trader.journal(limit=max(1, min(int(limit or 300), 2000)))
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:300]}
+
+
+@app.post("/api/admin/paper/settings")
+def paper_settings(payload: dict, _admin: str = Depends(require_admin)):
+    from backend import paper_trader
+    try:
+        return paper_trader.save_settings(payload or {})
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:300]}
+
+
+@app.post("/api/admin/paper/run")
+def paper_run(_admin: str = Depends(require_admin)):
+    """Runs one paper-trading check now (the same check the background loop runs every 5 minutes)."""
+    from backend import paper_trader
+    try:
+        return paper_trader.run_cycle(force=True)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:300]}
+
+
+@app.post("/api/admin/paper/reset")
+def paper_reset(payload: dict, _admin: str = Depends(require_admin)):
+    from backend import paper_trader
+    try:
+        return paper_trader.reset(float((payload or {}).get("starting_cash") or 1_000_000))
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:300]}
+
+
+@app.on_event("startup")
+def _start_paper_trader_on_boot():
+    """Admin Paper Trading loop: one check every 5 minutes in market hours. PAPER_TRADER_LOOP=0 turns it off."""
+    try:
+        from backend import paper_trader
+        paper_trader.start_background_loop()
+    except Exception as exc:
+        print(f"[STARTUP] paper trader not started: {exc}", flush=True)
+
+
 @app.post("/api/admin/content-hub/check")
 def content_hub_check(payload: dict, _admin: str = Depends(require_admin)):
     """
