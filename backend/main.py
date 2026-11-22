@@ -8225,3 +8225,30 @@ if _tastytrade_os.getenv(
     @app.on_event("shutdown")
     async def stop_tastytrade_futures():
         await tastytrade_futures_service.stop()
+
+# SIGMALYTIC FUTURES READ-ONLY API V1
+from fastapi import Query as _futures_query
+
+@app.get('/api/futures/status')
+def sigmalytic_futures_status():
+    status = tastytrade_futures_service.status()
+    subscribed = status.get('subscribed_symbols', 0)
+    received = status.get('received_symbols', 0)
+    status['coverage_percent'] = round(100 * received / subscribed, 2) if subscribed else 0.0
+    status['data_available'] = received > 0
+    return status
+
+@app.get('/api/futures/quotes')
+def sigmalytic_futures_quotes(limit: int = _futures_query(default=50, ge=1, le=500), fresh_only: bool = False):
+    quotes = tastytrade_futures_service.quotes()
+    if fresh_only:
+        quotes = {k: v for k, v in quotes.items() if not v.get('stale', True)}
+    symbols = sorted(quotes)
+    return {'provider': 'tastytrade', 'market': 'futures', 'mode': 'read_only', 'entitlement_level': tastytrade_futures_service.status().get('entitlement_level'), 'total_matching_symbols': len(symbols), 'returned_symbols': min(limit, len(symbols)), 'quotes': {k: quotes[k] for k in symbols[:limit]}}
+
+@app.get('/api/futures/quotes/{symbol:path}')
+def sigmalytic_futures_symbol(symbol: str):
+    quotes = tastytrade_futures_service.quotes()
+    if symbol not in quotes:
+        raise HTTPException(status_code=404, detail='No received futures data for symbol')
+    return {'provider': 'tastytrade', 'symbol': symbol, 'entitlement_level': tastytrade_futures_service.status().get('entitlement_level'), 'data': quotes[symbol]}
