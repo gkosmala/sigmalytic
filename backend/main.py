@@ -114,6 +114,9 @@ app = FastAPI(
     version="2.0.0", **create_app_kwargs()
 )
 install_security(app)
+# Tastytrade read-only OAuth diagnostic
+from backend.tastytrade_diagnostic import router as tastytrade_diagnostic_router
+app.include_router(tastytrade_diagnostic_router)
 
 # ADDED (2026-09-20): CORS for /api/debug/* only, GET only. Built so a
 # published test page (the operator explicitly wants to click-test the
