@@ -8202,3 +8202,26 @@ def r4_r14f_strict_wlw_event_date_facts_main_bridge(
         livermore_short_risk_pivot_price=livermore_short_risk_pivot_price,
     )
 # === R4-R14F STRICT WLW MAIN ROUTE BRIDGE END ===
+
+# ============================================================
+# SIGMALYTIC — TASTYTRADE FUTURES MARKET DATA
+# Read-only DXLink streaming integration
+# ============================================================
+
+import os as _tastytrade_os
+
+from backend.tastytrade_futures_service import (
+    tastytrade_futures_service,
+)
+
+if _tastytrade_os.getenv(
+    "TASTYTRADE_FUTURES_ENABLED", "false"
+).strip().lower() == "true":
+
+    @app.on_event("startup")
+    async def start_tastytrade_futures():
+        await tastytrade_futures_service.start()
+
+    @app.on_event("shutdown")
+    async def stop_tastytrade_futures():
+        await tastytrade_futures_service.stop()
