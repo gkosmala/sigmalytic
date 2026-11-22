@@ -8252,3 +8252,7 @@ def sigmalytic_futures_symbol(symbol: str):
     if symbol not in quotes:
         raise HTTPException(status_code=404, detail='No received futures data for symbol')
     return {'provider': 'tastytrade', 'symbol': symbol, 'entitlement_level': tastytrade_futures_service.status().get('entitlement_level'), 'data': quotes[symbol]}
+
+# SIGMALYTIC FUTURES DASHBOARD ROUTER V1
+from backend.futures_dashboard import router as futures_dashboard_router
+app.include_router(futures_dashboard_router)
