@@ -46,8 +46,10 @@ class DXLinkFutures:
         self.authorized = False
         self.entitlement_level = None
         self.last_error = None
+
         self._stop = False
         self._socket = None
+        self._first_data_logged = False
 
     def set_symbols(self, contracts):
         self.symbols = {
@@ -58,6 +60,7 @@ class DXLinkFutures:
 
     def snapshot(self):
         now = time.time()
+
         return {
             "connected": self.connected,
             "authorized": self.authorized,
@@ -68,8 +71,10 @@ class DXLinkFutures:
             "quotes": {
                 symbol: {
                     **data,
-                    "stale": now - data["received_epoch"]
-                    > STALE_SECONDS,
+                    "stale": (
+                        now - data["received_epoch"]
+                        > STALE_SECONDS
+                    ),
                 }
                 for symbol, data in self.quotes.items()
             },
@@ -83,14 +88,17 @@ class DXLinkFutures:
 
         while True:
             remaining = deadline - time.monotonic()
+
             if remaining <= 0:
                 raise TimeoutError(
                     f"DXLink handshake timed out: {expected}"
                 )
 
             raw = await asyncio.wait_for(
-                self._socket.recv(), timeout=remaining
+                self._socket.recv(),
+                timeout=remaining,
             )
+
             message = json.loads(raw)
             kind = message.get("type")
 
@@ -101,6 +109,7 @@ class DXLinkFutures:
 
             if kind == "AUTH_STATE":
                 state = message.get("state")
+
                 if state == "AUTHORIZED":
                     self.authorized = True
                 elif state == "UNAUTHORIZED":
@@ -119,10 +128,13 @@ class DXLinkFutures:
         })
 
         await self._wait_for("SETUP")
+
         state = await self._wait_for("AUTH_STATE")
 
         if state.get("state") != "UNAUTHORIZED":
-            raise RuntimeError("Unexpected DXLink auth state")
+            raise RuntimeError(
+                "Unexpected DXLink auth state"
+            )
 
         await self._send({
             "type": "AUTH",
@@ -131,14 +143,19 @@ class DXLinkFutures:
         })
 
         state = await self._wait_for("AUTH_STATE")
+
         if state.get("state") != "AUTHORIZED":
-            raise RuntimeError("DXLink authorization failed")
+            raise RuntimeError(
+                "DXLink authorization failed"
+            )
 
         await self._send({
             "type": "CHANNEL_REQUEST",
             "channel": CHANNEL,
             "service": "FEED",
-            "parameters": {"contract": "AUTO"},
+            "parameters": {
+                "contract": "AUTO"
+            },
         })
 
         await self._wait_for("CHANNEL_OPENED")
@@ -156,10 +173,18 @@ class DXLinkFutures:
     async def _subscribe(self):
         symbols = sorted(self.symbols)
 
-        for offset in range(0, len(symbols), BATCH_SIZE):
-            batch = symbols[offset:offset + BATCH_SIZE]
+        for offset in range(
+            0, len(symbols), BATCH_SIZE
+        ):
+            batch = symbols[
+                offset:offset + BATCH_SIZE
+            ]
+
             additions = [
-                {"type": event_type, "symbol": symbol}
+                {
+                    "type": event_type,
+                    "symbol": symbol,
+                }
                 for symbol in batch
                 for event_type in EVENT_FIELDS
             ]
@@ -173,41 +198,97 @@ class DXLinkFutures:
 
             await asyncio.sleep(0.1)
 
+        log.warning(
+            "DXLink futures subscriptions sent: %d symbols",
+            len(symbols),
+        )
+
     def _handle_feed(self, message):
+        """
+        Decode DXLink COMPACT market-data messages.
+
+        Supports both flat event rows and grouped event
+        rows. Preserves Quote, Trade and Summary data.
+        """
+
         data = message.get("data", [])
+
         if not isinstance(data, list):
             return
 
         index = 0
+        received = 0
+
         while index + 1 < len(data):
             event_type = data[index]
             rows = data[index + 1]
             index += 2
 
             fields = EVENT_FIELDS.get(event_type)
-            if not fields or not isinstance(rows, list):
+
+            if not fields:
                 continue
 
-            for row in rows:
+            if not isinstance(rows, list):
+                continue
+
+            # DXLink COMPACT may provide a single flat
+            # event row or a collection of event rows.
+            if rows and isinstance(rows[0], list):
+                events = rows
+            else:
+                events = [rows]
+
+            for row in events:
                 if not isinstance(row, list):
                     continue
 
                 event = dict(zip(fields, row))
+
                 symbol = event.get("eventSymbol")
-                if not symbol or symbol not in self.symbols:
+
+                if not symbol:
+                    continue
+
+                if symbol not in self.symbols:
                     continue
 
                 now = time.time()
-                quote = self.quotes.setdefault(symbol, {})
+
+                quote = self.quotes.setdefault(
+                    symbol, {}
+                )
+
                 quote[event_type.lower()] = event
                 quote["received_epoch"] = now
-                quote["received_at"] = datetime.fromtimestamp(
-                    now, timezone.utc
-                ).isoformat()
+
+                quote["received_at"] = (
+                    datetime.fromtimestamp(
+                        now, timezone.utc
+                    ).isoformat()
+                )
+
+                received += 1
+
+        if (
+            received > 0
+            and not self._first_data_logged
+        ):
+            self._first_data_logged = True
+
+            log.warning(
+                "DXLink futures first data received: "
+                "%d events, %d symbols",
+                received,
+                len(self.quotes),
+            )
 
     async def _keepalive(self):
         while not self._stop:
-            await asyncio.sleep(KEEPALIVE_SECONDS)
+            await asyncio.sleep(
+                KEEPALIVE_SECONDS
+            )
+
             await self._send({
                 "type": "KEEPALIVE",
                 "channel": 0,
@@ -224,7 +305,10 @@ class DXLinkFutures:
                 credentials = await asyncio.to_thread(
                     get_dxlink_credentials
                 )
-                self.entitlement_level = credentials["level"]
+
+                self.entitlement_level = (
+                    credentials["level"]
+                )
 
                 async with websockets.connect(
                     credentials["url"],
@@ -232,11 +316,22 @@ class DXLinkFutures:
                     ping_timeout=20,
                     max_size=8 * 1024 * 1024,
                 ) as socket:
+
                     self._socket = socket
-                    await self._handshake(credentials["token"])
+
+                    await self._handshake(
+                        credentials["token"]
+                    )
+
                     self.connected = True
                     self.last_error = None
                     delay = 2
+
+                    log.warning(
+                        "DXLink futures connected and authorized; "
+                        "entitlement=%s",
+                        self.entitlement_level,
+                    )
 
                     await self._subscribe()
 
@@ -247,25 +342,33 @@ class DXLinkFutures:
                     try:
                         async for raw in socket:
                             message = json.loads(raw)
+
                             kind = message.get("type")
 
                             if kind == "FEED_DATA":
-                                self._handle_feed(message)
+                                self._handle_feed(
+                                    message
+                                )
+
                             elif kind == "AUTH_STATE":
                                 self.authorized = (
                                     message.get("state")
                                     == "AUTHORIZED"
                                 )
+
                                 if not self.authorized:
                                     raise RuntimeError(
                                         "DXLink authorization lost"
                                     )
+
                             elif kind == "ERROR":
                                 raise RuntimeError(
                                     "DXLink protocol error"
                                 )
+
                     finally:
                         keepalive.cancel()
+
                         await asyncio.gather(
                             keepalive,
                             return_exceptions=True,
@@ -273,12 +376,17 @@ class DXLinkFutures:
 
             except asyncio.CancelledError:
                 raise
+
             except Exception as exc:
-                self.last_error = type(exc).__name__
+                self.last_error = (
+                    type(exc).__name__
+                )
+
                 log.warning(
                     "DXLink futures disconnected: %s",
                     type(exc).__name__,
                 )
+
             finally:
                 self.connected = False
                 self.authorized = False
@@ -288,10 +396,14 @@ class DXLinkFutures:
                 await asyncio.sleep(
                     delay + random.uniform(0, 1)
                 )
-                delay = min(delay * 2, 60)
+
+                delay = min(
+                    delay * 2, 60
+                )
 
     async def stop(self):
         self._stop = True
+
         if self._socket is not None:
             await self._socket.close()
 
