@@ -287,7 +287,7 @@ async function refresh() {
     allQuotes = data.quotes || {};
     render();
     volatilityWatchlist();
-    await updateCashVolatility();
+    // Cash VIX uses DXLink data.
   } catch (error) {
     el("connection").textContent = "● API ERROR";
     el("connection").className = "pill bad";
@@ -307,12 +307,12 @@ function volatilityWatchlist() {
   const container = el('vol-watchlist');
   container.replaceChildren();
   const instruments = [
-    {name:'VIX',type:'Cboe Cash Volatility Index',root:null},
+    {name:'VIX',type:'Cboe Cash Volatility Index',root:'VIX'},
     {name:'VXX',type:'VIX Short-Term Futures ETN',root:'VXX'},
     {name:'VX Futures',type:'Cboe Volatility Futures',root:'VX'}
   ];
   for (const item of instruments) {
-    const entries = Object.entries(allQuotes).filter(([symbol]) => item.root && ((item.root=== 'VXX' ? symbol=== 'VXX' : symbol.startsWith('/VX')) || symbol.startsWith('VX')));
+    const entries = Object.entries(allQuotes).filter(([symbol]) => item.root && (item.root===String.fromCharCode(86,73,88) ? symbol===String.fromCharCode(86,73,88) : item.root===String.fromCharCode(86,88,88) ? symbol===String.fromCharCode(86,88,88) : symbol.startsWith(String.fromCharCode(47,86,88))));
     const active = entries.find(([symbol,q]) => !q.stale) || entries[0];
     const q = active ? active[1] : null;
     const price = q ? (q.trade?.price ?? q.quote?.bidPrice ?? null) : null;
