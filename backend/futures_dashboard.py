@@ -136,6 +136,8 @@ small { color:var(--muted); }
   </div>
 </section>
 
+<section class="panel" style="margin-bottom:22px"><h2 style="color:var(--gold)">Volatility Watchlist</h2><div class="cards" id="vol-watchlist"></div><small>VIX = cash volatility index; VXX = exchange-traded ETN; VX = VIX futures. Missing data is never estimated.</small></section>
+
 <div class="panel">
   <div class="controls">
     <input id="search" placeholder="Search futures symbol..."
@@ -284,6 +286,7 @@ async function refresh() {
 
     allQuotes = data.quotes || {};
     render();
+    volatilityWatchlist();
   } catch (error) {
     el("connection").textContent = "● API ERROR";
     el("connection").className = "pill bad";
@@ -296,6 +299,30 @@ async function refresh() {
 el("search").addEventListener("input",render);
 el("fresh").addEventListener("change",render);
 el("refresh").addEventListener("click",refresh);
+
+
+// SIGMALYTIC VOLATILITY WATCHLIST V1
+function volatilityWatchlist() {
+  const container = el('vol-watchlist');
+  container.replaceChildren();
+  const instruments = [
+    {name:'VIX',type:'Cboe Cash Volatility Index',root:null},
+    {name:'VXX',type:'VIX Short-Term Futures ETN',root:null},
+    {name:'VX Futures',type:'Cboe Volatility Futures',root:'VX'}
+  ];
+  for (const item of instruments) {
+    const entries = Object.entries(allQuotes).filter(([symbol]) => item.root && (symbol.startsWith('/VX') || symbol.startsWith('VX')));
+    const active = entries.find(([symbol,q]) => !q.stale) || entries[0];
+    const q = active ? active[1] : null;
+    const price = q ? (q.trade?.price ?? q.quote?.bidPrice ?? null) : null;
+    const card = document.createElement('div');
+    card.className = 'card';
+    const heading = document.createElement('div'); heading.className='label'; heading.textContent=item.name+' | '+item.type;
+    const value = document.createElement('div'); value.className='value'; value.textContent=price === null ? 'NO DATA' : number(price);
+    const note = document.createElement('small'); note.textContent=active ? active[0]+' | '+(q.stale?'STALE':'FRESH') : 'Feed not available in current futures stream';
+    card.append(heading,value,note); container.appendChild(card);
+  }
+}
 
 refresh();
 setInterval(refresh,5000);
