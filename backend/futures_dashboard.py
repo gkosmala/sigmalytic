@@ -287,6 +287,7 @@ async function refresh() {
     allQuotes = data.quotes || {};
     render();
     volatilityWatchlist();
+    await updateCashVolatility();
   } catch (error) {
     el("connection").textContent = "● API ERROR";
     el("connection").className = "pill bad";
@@ -322,6 +323,27 @@ function volatilityWatchlist() {
     const note = document.createElement('small'); note.textContent=active ? active[0]+' | '+(q.stale?'STALE':'FRESH') : 'Feed not available in current futures stream';
     card.append(heading,value,note); container.appendChild(card);
   }
+}
+
+
+// SIGMALYTIC VIX VXX FETCH V1
+async function updateCashVolatility() {
+  try {
+    const response=await fetch('/api/futures/volatility',{cache:'no-store'});
+    if (!response.ok) return;
+    const data=await response.json();
+    for (const card of el('vol-watchlist').querySelectorAll('.card')) {
+      const name=card.querySelector('.label')?.textContent?.split(' | ')[0];
+      if (name!=='VIX' && name!=='VXX') continue;
+      const q=data.quotes?.[name];
+      const raw=q?.last ?? q?.mark ?? q?.bid;
+      const price=raw===null || raw===undefined || raw==='' ? null : Number(raw);
+      const value=card.querySelector('.value');
+      const note=card.querySelector('small');
+      value.textContent=price!==null && Number.isFinite(price) ? number(price) : 'NO DATA';
+      note.textContent=q ? 'tastytrade | '+(q.updated_at || 'Timestamp unavailable') : (data.error || 'Quote unavailable under current entitlement');
+    }
+  } catch (error) { console.warn('Volatility data unavailable'); }
 }
 
 refresh();

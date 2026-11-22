@@ -8256,3 +8256,24 @@ def sigmalytic_futures_symbol(symbol: str):
 # SIGMALYTIC FUTURES DASHBOARD ROUTER V1
 from backend.futures_dashboard import router as futures_dashboard_router
 app.include_router(futures_dashboard_router)
+
+# SIGMALYTIC VIX VXX MARKET DATA V1
+import time as _vol_time
+from backend.tastytrade_futures import _get as _vol_get
+_vol_cache={'at':0.0,'result':None}
+@app.get('/api/futures/volatility')
+def sigmalytic_volatility_quotes():
+    now=_vol_time.monotonic()
+    if _vol_cache['result'] is not None and now-_vol_cache['at']<30:
+        return _vol_cache['result']
+    result={'provider':'tastytrade','quotes':{},'error':None}
+    try:
+        payload=_vol_get('/market-data/by-type',{'index':'VIX','equity':'VXX'})
+        for item in payload.get('data',{}).get('items',[]):
+            symbol=item.get('symbol')
+            if symbol in ('VIX','VXX'):
+                result['quotes'][symbol]={'last':item.get('last'),'mark':item.get('mark'),'bid':item.get('bid'),'ask':item.get('ask'),'updated_at':item.get('updated-at'),'instrument_type':item.get('instrument-type')}
+    except Exception as exc:
+        result['error']='Market data unavailable: '+type(exc).__name__
+    _vol_cache.update(at=now,result=result)
+    return result
