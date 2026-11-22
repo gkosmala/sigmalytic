@@ -308,11 +308,11 @@ function volatilityWatchlist() {
   container.replaceChildren();
   const instruments = [
     {name:'VIX',type:'Cboe Cash Volatility Index',root:null},
-    {name:'VXX',type:'VIX Short-Term Futures ETN',root:null},
+    {name:'VXX',type:'VIX Short-Term Futures ETN',root:'VXX'},
     {name:'VX Futures',type:'Cboe Volatility Futures',root:'VX'}
   ];
   for (const item of instruments) {
-    const entries = Object.entries(allQuotes).filter(([symbol]) => item.root && (symbol.startsWith('/VX') || symbol.startsWith('VX')));
+    const entries = Object.entries(allQuotes).filter(([symbol]) => item.root && ((item.root=== 'VXX' ? symbol=== 'VXX' : symbol.startsWith('/VX')) || symbol.startsWith('VX')));
     const active = entries.find(([symbol,q]) => !q.stale) || entries[0];
     const q = active ? active[1] : null;
     const price = q ? (q.trade?.price ?? q.quote?.bidPrice ?? null) : null;
@@ -334,7 +334,7 @@ async function updateCashVolatility() {
     const data=await response.json();
     for (const card of el('vol-watchlist').querySelectorAll('.card')) {
       const name=card.querySelector('.label')?.textContent?.split(' | ')[0];
-      if (name!=='VIX' && name!=='VXX') continue;
+      if (name!=='VIX') continue;
       const q=data.quotes?.[name];
       const raw=q?.last ?? q?.mark ?? q?.bid;
       const price=raw===null || raw===undefined || raw==='' ? null : Number(raw);

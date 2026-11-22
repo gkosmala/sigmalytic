@@ -45,7 +45,7 @@ class TastytradeFuturesService:
             )
 
         self.contracts = contracts
-        self.stream.set_symbols(contracts)
+        self.stream.set_symbols(contracts + [dict(streamer_symbol=chr(86)+chr(88)+chr(88),symbol=chr(86)+chr(88)+chr(88),root=chr(86)+chr(88)+chr(88))])
 
         self.last_catalog_refresh = datetime.now(
             timezone.utc
