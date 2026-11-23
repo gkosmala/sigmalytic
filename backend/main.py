@@ -8287,7 +8287,7 @@ def sigmalytic_futures_intelligence():
     quotes = service.quotes()
     result = {}
     for root in ('ES','NQ','YM','RTY','CL','GC','VX'):
-        contracts = sorted((c for c in service.contracts if str(c.get('root','')).upper().lstrip('/') == root and str(c.get('expiration') or '') >= date.today().isoformat() and (root != chr(67)+chr(76) or str(c.get(chr(101)+chr(120)+chr(112)+chr(105)+chr(114)+chr(97)+chr(116)+chr(105)+chr(111)+chr(110)) or chr(0)) <= (date.today()+__import__(chr(100)+chr(97)+chr(116)+chr(101)+chr(116)+chr(105)+chr(109)+chr(101)).timedelta(days=90)).isoformat())),key=lambda c: str(c.get('expiration') or ''))
+        contracts = sorted((c for c in service.contracts if str(c.get('root','')).upper().lstrip('/') == root and str(c.get('expiration') or '') >= date.today().isoformat() and (root != chr(67)+chr(76) or str(c.get(chr(101)+chr(120)+chr(112)+chr(105)+chr(114)+chr(97)+chr(116)+chr(105)+chr(111)+chr(110)) or chr(0)) <= (date.today()+__import__(chr(100)+chr(97)+chr(116)+chr(101)+chr(116)+chr(105)+chr(109)+chr(101)).timedelta(days=120)).isoformat())),key=lambda c: str(c.get('expiration') or ''))
         observations = []
         for c in contracts:
             symbol = c.get('streamer_symbol')
