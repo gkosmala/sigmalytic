@@ -1,5 +1,6 @@
 # Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
-"""Top 25 Report Pack (Admin tab): picks the 25 largest U.S. companies by market cap and builds one PDF of public reports.
+"""Top Companies Report Pack (Admin tab): picks the largest U.S. companies by market cap (you choose how many, 1 to 100)
+and builds one PDF of public reports.
 Backend: /api/admin/report-pack/* in backend/main.py and backend/report_pack.py."""
 from __future__ import annotations
 
@@ -22,7 +23,7 @@ def _btn(label, id_, bg=TEAL):
 
 def build_block(admin_card):
     return admin_card([
-        html.Div("TOP 25 REPORT PACK", style={"fontSize": "12px", "fontWeight": "800", "color": WHITE, "marginBottom": "6px"}),
+        html.Div("TOP COMPANIES REPORT PACK", style={"fontSize": "12px", "fontWeight": "800", "color": WHITE, "marginBottom": "6px"}),
         html.Div("Builds one public market-structure report for each of the largest U.S. companies by market "
                  "capitalization and combines them into one PDF: a cover page with contents, then each report with its "
                  "chart, key levels, recent news and the disclaimer. The analysis is written from the platform's data at no "
@@ -30,21 +31,23 @@ def build_block(admin_card):
                  "and geopolitical news) and FRED economic data; Claude Haiku then writes the short news paragraphs "
                  "(about a tenth of a cent per report). "
                  "The reports never name the platform's methods; any report that still contains a blocked word is left "
-                 "out of the PDF. About a minute per report; it keeps running if you leave this page, and reports already "
-                 "finished today are reused at no new cost.",
+                 "out of the PDF. About a minute per report (so 50 reports take roughly 25 to 50 minutes); it keeps "
+                 "running if you leave this page, and reports already finished today are reused at no new cost, so "
+                 "going from 25 to 50 only builds the 25 new ones.",
                  style={"fontSize": "11px", "color": MUTED, "marginBottom": "12px", "lineHeight": "1.6"}),
         html.Div([
-            html.Span("How many: ", style={"fontSize": "12px", "color": WHITE, "fontWeight": "700"}),
-            dcc.RadioItems(id="report-pack-size", value=3, inline=True,
-                           options=[{"label": " Sample of 3 ", "value": 3}, {"label": " All 25", "value": 25}],
-                           style={"display": "inline-block", "fontSize": "12px", "color": WHITE},
-                           inputStyle={"marginLeft": "10px"}),
+            html.Span("How many companies: ", style={"fontSize": "12px", "color": WHITE, "fontWeight": "700"}),
+            dcc.Input(id="report-pack-size", type="number", value=25, min=1, max=100, step=1, debounce=True,
+                      style={"width": "70px", "background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}",
+                             "borderRadius": "6px", "padding": "5px 8px", "color": WHITE, "fontSize": "12px"}),
+            html.Span(" 1 to 100 (use the arrows or type a number; 3 makes a quick sample)",
+                      style={"fontSize": "11px", "color": MUTED, "marginLeft": "6px"}),
             dcc.Checklist(id="report-pack-ai", value=["y"],
                           options=[{"label": " Haiku writes the news paragraphs (otherwise headlines are listed, $0)", "value": "y"}],
                           style={"display": "inline-block", "marginLeft": "18px", "fontSize": "11px", "color": MUTED}),
         ], style={"marginBottom": "10px"}),
         html.Div([
-            _btn("Show today's top 25", "report-pack-load-btn", "#334155"),
+            _btn("Show today's list", "report-pack-load-btn", "#334155"),
             _btn("Generate PDF pack", "report-pack-start-btn"),
             _btn("Retry failed", "report-pack-retry-btn", "#475569"),
             _btn("Start over (new reports)", "report-pack-restart-btn", "#7f1d1d"),
@@ -64,21 +67,31 @@ def _cap(v):
     return f"${v / 1e12:,.2f}T" if v >= 1e12 else f"${v / 1e9:,.0f}B"
 
 
-def render_list(d):
+def _size(v):
+    try:
+        return max(1, min(100, int(v or 25)))
+    except (TypeError, ValueError):
+        return 25
+
+
+def render_list(d, size=25):
     if not d.get("ok"):
         return html.Div(d.get("error") or "Could not build the list.", style={"color": RED})
     cell = {"padding": "3px 8px", "borderBottom": f"1px solid {BORDER}", "fontSize": "11px", "color": WHITE}
     head = {**cell, "color": MUTED, "fontWeight": "800"}
     rows = [html.Tr([html.Th(h, style=head) for h in ("#", "Symbol", "Company", "Est. market cap", "Price", "Shares as of")])]
-    for r in d.get("top") or []:
+    top = d.get("top") or []
+    chosen, rest = top[:size], top[size:]
+    for r in chosen:
         rows.append(html.Tr([html.Td(r["rank"], style=cell), html.Td(r["symbol"], style={**cell, "fontWeight": "700"}),
                              html.Td(r.get("name") or "", style=cell), html.Td(_cap(r["market_cap"]), style=cell),
                              html.Td(f"${r['price']:,.2f}", style=cell), html.Td(r.get("shares_as_of") or "", style=cell)]))
-    nxt = ", ".join(f"{r['symbol']} ({_cap(r['market_cap'])})" for r in d.get("next") or [])
+    nxt = ", ".join(f"{r['symbol']} ({_cap(r['market_cap'])})" for r in (rest or d.get("next") or [])[:5])
     skipped = d.get("skipped") or []
     return html.Div([
         html.Div(f"List computed {d.get('computed_at', '')[:16].replace('T', ' ')} UTC from {d.get('candidates')} candidates. "
-                 f"{d.get('method', '')} Estimates are for choosing the 25 only; they are not printed in the PDF.",
+                 f"{d.get('method', '')} Showing the top {len(chosen)}. Estimates are for choosing the companies only; "
+                 f"they are not printed in the PDF.",
                  style={"fontSize": "11px", "color": MUTED, "marginBottom": "6px"}),
         html.Table(rows, style={"borderCollapse": "collapse", "width": "100%", "maxWidth": "820px"}),
         html.Div("Next in line: " + nxt, style={"fontSize": "11px", "color": MUTED, "marginTop": "6px"}) if nxt else html.Div(),
@@ -142,16 +155,17 @@ def render_status(s):
 def register(app, req, backend_http, auth_headers):
     @app.callback(Output("report-pack-list", "children"),
                   Input("report-pack-load-btn", "n_clicks"),
+                  State("report-pack-size", "value"),
                   State("s-session", "data"),
                   prevent_initial_call=True)
-    def _load(n, session):
+    def _load(n, size, session):
         try:
             r = req.get(f"{backend_http}/api/admin/report-pack/top", headers=auth_headers(session), timeout=180)
             if r.status_code in (401, 403):
                 return "Admin access only. Sign in again if your session expired."
             if not r.ok:
                 return f"Could not load the list (error {r.status_code}): {r.text[:200]}"
-            return render_list(r.json())
+            return render_list(r.json(), _size(size))
         except Exception as exc:
             return f"Could not reach the backend: {exc}"
 
@@ -169,7 +183,7 @@ def register(app, req, backend_http, auth_headers):
         clicked = bool(callback_context.triggered and (callback_context.triggered[0].get("value") or 0))
         try:
             if trig in ("report-pack-start-btn", "report-pack-retry-btn", "report-pack-restart-btn") and clicked:
-                body = {"use_ai": "y" in (ai or []), "size": int(size or 3), "retry_failed": trig == "report-pack-retry-btn",
+                body = {"use_ai": "y" in (ai or []), "size": _size(size), "retry_failed": trig == "report-pack-retry-btn",
                         "restart": trig == "report-pack-restart-btn"}
                 r = req.post(f"{backend_http}/api/admin/report-pack/start", json=body, headers=auth_headers(session), timeout=200)
             else:
@@ -197,7 +211,7 @@ def register(app, req, backend_http, auth_headers):
                 return no_update, "Admin access only. Sign in again if your session expired."
             if not r.ok:
                 return no_update, f"Could not download (error {r.status_code}): {r.text[:200]}"
-            name = f"Sigmalytic_Top25_Report_Pack_{datetime.now().strftime('%Y-%m-%d')}.pdf"
+            name = f"Sigmalytic_Top_Companies_Report_Pack_{datetime.now().strftime('%Y-%m-%d')}.pdf"
             return {"content": base64.b64encode(r.content).decode("ascii"), "filename": name, "base64": True,
                     "type": "application/pdf"}, ""
         except Exception as exc:

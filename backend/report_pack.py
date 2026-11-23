@@ -2,8 +2,9 @@
 """
 backend/report_pack.py
 ----------------------
-Top 25 Report Pack (Admin): one public market-structure report for each of the largest U.S. companies by market
-capitalization (a sample of 3, or all 25), combined into one PDF with a cover page, contents and each symbol's chart.
+Top Companies Report Pack (Admin): one public market-structure report for each of the largest U.S. companies by
+market capitalization (the admin picks how many, 1 to 100; 25 by default), combined into one PDF with a cover page,
+contents and each symbol's chart.
 
 How the companies are chosen
     Estimated market cap = shares outstanding (latest SEC filing, dei:EntityCommonStockSharesOutstanding, all share
@@ -49,18 +50,28 @@ from zoneinfo import ZoneInfo
 
 ET = ZoneInfo("America/New_York")
 PACK_DIR = os.getenv("REPORT_PACK_DIR", "/tmp/sigmalytic_report_pack")
-PACK_SIZE = 25
+PACK_SIZE = 25                 # default number of reports
+MAX_PACK_SIZE = max(1, min(150, int(os.getenv("REPORT_PACK_MAX", "100") or 100)))   # most the admin can choose
 WORKERS = max(1, min(4, int(os.getenv("REPORT_PACK_WORKERS", "2") or 2)))
 STALE_SECONDS = 300            # a running job with no heartbeat for this long is treated as interrupted and resumed
-TOP_TTL = 24 * 3600            # the top-25 list is recomputed at most once a day unless refreshed by hand
+TOP_TTL = 24 * 3600            # the ranked list is recomputed at most once a day unless refreshed by hand
 SHARES_TTL = 7 * 24 * 3600     # SEC share counts change quarterly; refetched weekly
 
-# Large U.S. SEC filers that could rank in the top 25. Only one share class per company (BRK.B, GOOGL).
+# Large U.S. SEC filers that could rank in the top 100 (about 150, so the ranking near number 100 is reliable).
+# Only one share class per company (BRK.B, GOOGL). Order does not matter: the list is ranked live.
 DEFAULT_CANDIDATES = [
     "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "AVGO", "TSLA", "BRK.B", "LLY", "JPM", "V", "WMT", "ORCL", "MA",
     "XOM", "NFLX", "COST", "JNJ", "PLTR", "HD", "ABBV", "BAC", "PG", "AMD", "UNH", "KO", "GE", "CVX", "CSCO", "IBM",
     "WFC", "MS", "TMUS", "PM", "CRM", "GS", "ABT", "MCD", "LIN", "AXP", "MU", "INTU", "CAT", "NOW", "ISRG", "RTX",
     "PEP", "T", "VZ", "BX", "UBER", "SCHW", "BKNG", "ANET", "QCOM", "TXN", "DIS", "AMAT", "LRCX", "C", "APP",
+    "ADBE", "PFE", "MRK", "TMO", "DHR", "AMGN", "GILD", "NEE", "SPGI", "HON", "UNP", "LOW", "BLK", "SYK", "VRTX",
+    "ETN", "PANW", "CRWD", "ADP", "DE", "MDT", "LMT", "ELV", "CB", "MMC", "PLD", "SBUX", "BMY", "CI", "MO", "SO",
+    "DUK", "KKR", "CME", "ICE", "PGR", "COP", "ADI", "KLAC", "SNPS", "CDNS", "MRVL", "INTC", "APH", "WM", "GD", "NOC",
+    "MCK", "CVS", "ORLY", "AZO", "HCA", "TJX", "NKE", "MDLZ", "CL", "ZTS", "REGN", "BSX", "USB", "PNC", "COF", "EQIX",
+    "AMT", "WELL", "CEG", "VST", "DASH", "ABNB", "COIN", "HOOD", "MSTR", "FI", "PYPL", "EMR", "ITW", "TT", "PH",
+    "CTAS", "MAR", "HLT", "FTNT", "DDOG", "SNOW", "NET", "WDAY", "MCO", "AON", "TRV", "AFL", "MET", "SRE", "AEP",
+    "EOG", "SLB", "FCX", "NEM", "CMG", "GM", "DELL", "ACN", "RCL", "URI", "JCI", "BK", "APO", "BA", "GEV", "SHW",
+    "ECL", "PWR", "TDG", "MPC", "PSX", "WMB", "OKE", "KMI", "AJG", "CMI",
 ]
 
 PUBLIC_RULES = (
@@ -136,7 +147,7 @@ def candidates() -> List[str]:
     return list(dict.fromkeys(syms))
 
 
-# ───────────────────────────── top 25 by market cap ─────────────────────────────
+# ───────────────────────────── largest companies by market cap ─────────────────────────────
 
 def _latest_quarter(rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """The most recent figure; for period figures, the shortest (quarterly) one ending on the latest date."""
@@ -196,10 +207,12 @@ def _prices(symbols: List[str]) -> Dict[str, float]:
 
 
 def top_list(refresh: bool = False) -> Dict[str, Any]:
-    """The 25 largest candidates by estimated market cap, cached for a day."""
+    """The largest candidates by estimated market cap (up to MAX_PACK_SIZE), cached for a day."""
     path = os.path.join(_dir(), "top_market_cap.json")
     cached = _read(path)
-    if cached and not refresh and time.time() - cached.get("ts", 0) < TOP_TTL:
+    syms_now = candidates()
+    if (cached and not refresh and time.time() - cached.get("ts", 0) < TOP_TTL
+            and cached.get("max") == MAX_PACK_SIZE and cached.get("candidates") == len(syms_now)):
         return cached
     syms = candidates()
     shares_path = os.path.join(_dir(), "sec_shares.json")
@@ -236,7 +249,8 @@ def top_list(refresh: bool = False) -> Dict[str, Any]:
     rows.sort(key=lambda r: -r["market_cap"])
     for i, r in enumerate(rows, 1):
         r["rank"] = i
-    out = {"ok": True, "ts": time.time(), "computed_at": _now_iso(), "top": rows[:PACK_SIZE], "next": rows[PACK_SIZE:PACK_SIZE + 5],
+    out = {"ok": True, "ts": time.time(), "computed_at": _now_iso(), "max": MAX_PACK_SIZE,
+           "top": rows[:MAX_PACK_SIZE], "next": rows[MAX_PACK_SIZE:MAX_PACK_SIZE + 5],
            "candidates": len(syms), "skipped": skipped,
            "method": "Estimated market cap = shares outstanding from the latest SEC filing (all classes) x latest Alpaca price."}
     _write(path, out)
@@ -671,10 +685,10 @@ def _run(day: str) -> None:
 
 
 def start(use_ai: bool = True, restart: bool = False, retry_failed: bool = False, size: int = PACK_SIZE) -> Dict[str, Any]:
-    """Starts today's pack, or resumes it. size = how many of the top companies (3 for a sample, up to 25).
+    """Starts today's pack, or resumes it. size = how many of the largest companies (1 to MAX_PACK_SIZE).
     restart=True builds a new list and new reports; retry_failed re-queues failures. Finished reports are reused."""
     day = _today()
-    size = max(1, min(PACK_SIZE, int(size or PACK_SIZE)))
+    size = max(1, min(MAX_PACK_SIZE, int(size or PACK_SIZE)))
     with _lock:
         job = _read(_job_path(day))
         if job and job.get("state") in ("running", "assembling") and (_alive() or time.time() - job.get("heartbeat", 0) < STALE_SECONDS):
@@ -683,7 +697,7 @@ def start(use_ai: bool = True, restart: bool = False, retry_failed: bool = False
             top = top_list(refresh=restart)
             rows = (top.get("top") or [])[:size]
             if not rows:
-                return {"ok": False, "error": "Could not build the top-25 list. " + "; ".join(
+                return {"ok": False, "error": "Could not build the list of largest companies. " + "; ".join(
                     f"{x['symbol']}: {x['reason']}" for x in (top.get("skipped") or [])[:5])}
             if restart:                            # restart means fresh reports, so today's old files are removed
                 for r in rows:
@@ -939,8 +953,7 @@ def assemble_pdf(day: str, job: Dict[str, Any]):
         raise ValueError("No report was completed, so there is nothing to put in the PDF.")
     long_day = ch._long_date(day)
     n = len(job.get("symbols") or [])
-    heading = (f"Top {n} U.S. Companies by Market Capitalization" if n >= PACK_SIZE
-               else f"Sample: Top {n} U.S. Companies by Market Capitalization")
+    heading = f"Top {n} U.S. Companies by Market Capitalization"
     rows = "".join(f"<tr><td>{i}</td><td><a href='#r{i}'>{esc(r['symbol'])}</a></td><td>{esc(r.get('name') or '')}</td>"
                    f"<td style='text-align:right'><a class='pg' href='#r{i}'></a></td></tr>" for i, r in enumerate(reps, 1))
     miss = (f"<p class='small'>Not included today: {esc(', '.join(missing))} (the report could not be completed).</p>"
@@ -958,7 +971,7 @@ def assemble_pdf(day: str, job: Dict[str, Any]):
              f"participation and recent news from SEC filings, news wires and economic data.</p>"
              f"<div class='toc'><table>{rows}</table></div>{miss}"
              f"<p class='disclaimer'>{esc(ch.DISCLAIMER)}</p></section>")
-    doc = (f"<!DOCTYPE html><html><head><meta charset='utf-8'><title>Sigmalytic Top 25 Report Pack {esc(day)}</title>"
+    doc = (f"<!DOCTYPE html><html><head><meta charset='utf-8'><title>Sigmalytic Top {n} Report Pack {esc(day)}</title>"
            f"<style>{_CSS}</style></head><body>{_welcome_html(day, reps, heading)}{cover}" + "".join(_report_html(r, i) for i, r in enumerate(reps, 1))
            + "</body></html>")
     doc = brand_tm(doc)
