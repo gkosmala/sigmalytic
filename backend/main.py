@@ -8278,4 +8278,18 @@ def sigmalytic_volatility_quotes():
     _vol_cache.update(at=now,result=result)
     return result
 
-# SIGMALYTIC FUTURES INTELLIGENCE BRIDGE V1@app.get('/api/futures/intelligence')def sigmalytic_futures_intelligence():    service = tastytrade_futures_service    quotes = service.quotes()    roots = ('ES','NQ','YM','RTY','CL','GC','VX')    result = {}    for root in roots:        contracts = [c for c in service.contracts if str(c.get('root','')).upper().lstrip('/') == root]        contracts.sort(key=lambda c: str(c.get('expiration') or ''))        observations = []        for c in contracts:            symbol = c.get('streamer_symbol')            q = quotes.get(symbol)            if not q:                continue            trade = q.get('trade') or {}            quote = q.get('quote') or {}            observations.append(dict(symbol=symbol,expiration=c.get('expiration'),last_trade=trade.get('price'),bid=quote.get('bidPrice'),ask=quote.get('askPrice'),received_at=q.get('received_at'),stale=q.get('stale',True),source='tastytrade_dxlink',entitlement=service.stream.entitlement_level))        result[root] = dict(available=bool(observations),contracts=observations[:3])    return dict(mode='read_only',purpose='market_observations_not_trading_signals',markets=result)
+# SIGMALYTIC FUTURES INTELLIGENCE BRIDGE V1
+@app.get('/api/futures/intelligence')
+def sigmalytic_futures_intelligence():
+    service = tastytrade_futures_service
+    quotes = service.quotes()
+    result = {}
+    for root in ('ES','NQ','YM','RTY','CL','GC','VX'):
+        contracts = [c for c in service.contracts if str(c.get('root','')).upper().lstrip('/') == root]
+        observations = []
+        for c in contracts:
+            symbol = c.get('streamer_symbol')
+            q = quotes.get(symbol)
+            if q: observations.append(dict(symbol=symbol,expiration=c.get('expiration'),last_trade=(q.get('trade') or {}).get('price'),received_at=q.get('received_at'),stale=q.get('stale',True)))
+        result[root] = dict(available=bool(observations),contracts=observations[:3])
+    return dict(mode='read_only',markets=result)
