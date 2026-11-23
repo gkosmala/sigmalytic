@@ -8278,18 +8278,26 @@ def sigmalytic_volatility_quotes():
     _vol_cache.update(at=now,result=result)
     return result
 
-# SIGMALYTIC FUTURES INTELLIGENCE BRIDGE V1
+# SIGMALYTIC FUTURES INTELLIGENCE BRIDGE V2
 @app.get('/api/futures/intelligence')
 def sigmalytic_futures_intelligence():
+    import math
+    from datetime import date
     service = tastytrade_futures_service
     quotes = service.quotes()
     result = {}
     for root in ('ES','NQ','YM','RTY','CL','GC','VX'):
-        contracts = [c for c in service.contracts if str(c.get('root','')).upper().lstrip('/') == root]
+        contracts = sorted((c for c in service.contracts if str(c.get('root','')).upper().lstrip('/') == root and str(c.get('expiration') or '') >= date.today().isoformat()),key=lambda c: str(c.get('expiration') or ''))
         observations = []
         for c in contracts:
             symbol = c.get('streamer_symbol')
             q = quotes.get(symbol)
-            if q: observations.append(dict(symbol=symbol,expiration=c.get('expiration'),last_trade=(q.get('trade') or {}).get('price'),received_at=q.get('received_at'),stale=q.get('stale',True)))
-        result[root] = dict(available=bool(observations),contracts=observations[:3])
-    return dict(mode='read_only',markets=result)
+            if not q or q.get('stale',True): continue
+            raw = (q.get('trade') or {}).get('price')
+            try: price = float(raw)
+            except (TypeError,ValueError): continue
+            if not math.isfinite(price) or price <= 0: continue
+            observations.append(dict(symbol=symbol,expiration=c.get('expiration'),last_trade=price,received_at=q.get('received_at'),stale=False,source='tastytrade_dxlink',entitlement=service.stream.entitlement_level))
+            if len(observations) == 3: break
+        result[root] = dict(available=bool(observations),contracts=observations)
+    return dict(mode='read_only',purpose='validated_market_observations_not_trading_signals',markets=result)
