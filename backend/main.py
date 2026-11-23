@@ -117,6 +117,8 @@ install_security(app)
 # Tastytrade read-only OAuth diagnostic
 from backend.tastytrade_diagnostic import router as tastytrade_diagnostic_router
 app.include_router(tastytrade_diagnostic_router)
+from backend.tastytrade_spot_indices import router as spot_indices_router
+app.include_router(spot_indices_router)
 
 # ADDED (2026-09-20): CORS for /api/debug/* only, GET only. Built so a
 # published test page (the operator explicitly wants to click-test the
@@ -135,7 +137,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 class _DebugOnlyCORS(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         response = await call_next(request)
-        if (request.url.path.startswith("/api/debug/") or request.url.path == "/api/futures/intelligence") and request.method == "GET":
+        if (request.url.path.startswith("/api/debug/") or request.url.path in ("/api/futures/intelligence", "/api/indices/spot")) and request.method == "GET":
             response.headers["Access-Control-Allow-Origin"] = "*"
         return response
 
