@@ -135,7 +135,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 class _DebugOnlyCORS(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         response = await call_next(request)
-        if request.url.path.startswith("/api/debug/") and request.method == "GET":
+        if (request.url.path.startswith("/api/debug/") or request.url.path == "/api/futures/intelligence") and request.method == "GET":
             response.headers["Access-Control-Allow-Origin"] = "*"
         return response
 
