@@ -45,7 +45,7 @@ class TastytradeFuturesService:
             )
 
         self.contracts = contracts
-        self.stream.set_symbols(contracts + [dict(streamer_symbol=x,symbol=x,root=x) for x in ("VXX", "VIX", "SPX", "$SPX", ".SPX", "SPX:X", "$VIX", ".VIX", "VIX:X")])
+        self.stream.set_symbols(contracts + [dict(streamer_symbol=x,symbol=x,root=x) for x in ('VXX', 'VIX', '$VIX', '.VIX', 'VIX:X', 'SPX', '$SPX', '.SPX', 'SPX:X', 'SPX.X', '$SPX.X', 'SPX:XCBO', 'SPX:INDEX', 'SPX.CBOE')])
 
         self.last_catalog_refresh = datetime.now(
             timezone.utc

@@ -8,7 +8,7 @@ from backend.tastytrade_futures_service import tastytrade_futures_service
 
 router = APIRouter()
 INDEX_SYMBOLS = {
-    "SPX": ("SPX", "$SPX", ".SPX", "SPX:X"),
+    "SPX": ('SPX', '$SPX', '.SPX', 'SPX:X', 'SPX.X', '$SPX.X', 'SPX:XCBO', 'SPX:INDEX', 'SPX.CBOE'),
     "VIX": ("VIX", "$VIX", ".VIX", "VIX:X"),
 }
 
@@ -50,6 +50,7 @@ def spot_indices():
         "mode": "read_only",
         "indices": indices,
         "available": {name: name in indices for name in INDEX_SYMBOLS},
+        "spx_candidates_received": [symbol for symbol in INDEX_SYMBOLS["SPX"] if symbol in quotes],
         "entitlement": str(stream.entitlement_level or "unknown"),
         "as_of": datetime.now(timezone.utc).isoformat(),
     }
