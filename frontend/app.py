@@ -5985,9 +5985,47 @@ def _quantum_voice_panel():
        style={"marginTop": "16px", "paddingTop": "12px", "borderTop": "1px solid rgba(201,162,39,.35)"})
 
 
-def build_admin_tab(session: dict, backend_url: str) -> html.Div:
+# FIX (2026-11-24): the admin tab used to build and send every one of its ~20 tools at
+# once (about 260 KB, plus the paper-trading tables), and the browser had to carry that
+# whole page through every one-second price tick -- slow, then frozen. Now the tab opens
+# as a list of folded sections; each section is built and sent only when its header is
+# clicked (see _admin_lazy_load). Nothing in a folded section is fetched or polled.
+ADMIN_SECTIONS = [
+    ("monitor",            "Performance monitor (header, snapshot writer, anomaly flags)"),
+    ("assistant",          "AI Sigmalytic Assistant"),
+    ("platform_review",    "Platform review"),
+    ("content_hub",        "Content Hub"),
+    ("report_hub",         "Daily report → Content Hub"),
+    ("report_pack",        "Top companies Report Pack"),
+    ("paper",              "Paper trading (admin test account)"),
+    ("catalyst",           "Multi-catalyst alignment engine"),
+    ("ma_study",           "Moving average study"),
+    ("astro",              "Astro research"),
+    ("weis_state",         "Weis setup state preview"),
+    ("radar_bars",         "Radar bars check"),
+    ("radar_bar_count",    "Radar bar count"),
+    ("setup",              "Setup & deployment"),
+    ("journal_correction", "Journal entry correction"),
+    ("subscriber_alerts",  "Send subscriber alerts"),
+]
+
+
+def _admin_lazy_section(key: str, title: str) -> html.Details:
+    """One folded admin section. Its body is filled by _admin_lazy_load on first open."""
+    return html.Details([
+        html.Summary(title, id={"type": "admin-lazy-sum", "key": key},
+                     style={"color": WHITE, "fontSize": "14px", "fontWeight": "900", "cursor": "pointer",
+                            "padding": "2px 0"}),
+        dcc.Loading(html.Div(id={"type": "admin-lazy-body", "key": key}, style={"marginTop": "12px"}),
+                    type="dot", color=TEAL_DIM),
+    ], open=False, style={"border": f"1px solid {BORDER}", "borderRadius": "14px", "padding": "12px 16px",
+                          "background": "rgba(8,24,39,.72)"})
+
+
+def build_admin_tab(session: dict, backend_url: str, section=None) -> html.Div:
     """
-    Build the full admin monitoring page.
+    Admin monitoring page. With section=None this returns only the folded section list
+    (no backend calls). With a section key it builds and returns just that section.
     Returns a 403 message if not admin.
     """
     if not is_admin(session):
@@ -5997,6 +6035,10 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             html.Div("This page is only accessible to the system administrator.",
                      style={"fontSize":"13px","color":WHITE,"marginTop":"8px"}),
         ], style={"textAlign":"center","padding":"80px 20px"})
+
+    if section is None:
+        return html.Div([_admin_lazy_section(k, t) for k, t in ADMIN_SECTIONS],
+                        style={"display": "flex", "flexDirection": "column", "gap": "10px"})
 
     # ── Fetch report from backend ─────────────────────────────────────────
     try:
@@ -6557,25 +6599,20 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         # FIX: was `_admin_card([...])` -- _card only exists as a local nested
         # function inside build_preferences_tab and is not visible here.
         # _admin_card is the real module-level equivalent already defined above.
-        return html.Div([
-            _admin_card([
-                html.Div("Could not load admin report.", style={"color":YELLOW_DIM,"fontSize":"14px"}),
-                html.Div("Backend may be initializing. Refresh in 30 seconds.",
-                         style={"color":WHITE,"fontSize":"12px","marginTop":"8px"}),
-            ], sx={"marginBottom": "16px"}),
-            assistant_block,
-            platform_review_block,
-            content_hub_block,
-            report_hub_block,
-            report_pack_block,
-            paper_trading_block,
-            catalyst_engine_block,
-            ma_study_block,
-            astro_research_block,
-            setup_deployment_block,
-            journal_correction_block,
-            subscriber_alerts_block,
-        ])
+        no_report = _admin_card([
+            html.Div("Could not load admin report.", style={"color":YELLOW_DIM,"fontSize":"14px"}),
+            html.Div("Backend may be initializing. Switch tabs and come back in 30 seconds.",
+                     style={"color":WHITE,"fontSize":"12px","marginTop":"8px"}),
+        ], sx={"marginBottom": "16px"})
+        available = {
+            "assistant": assistant_block, "platform_review": platform_review_block,
+            "content_hub": content_hub_block, "report_hub": report_hub_block,
+            "report_pack": report_pack_block, "paper": paper_trading_block,
+            "catalyst": catalyst_engine_block, "ma_study": ma_study_block,
+            "astro": astro_research_block, "setup": setup_deployment_block,
+            "journal_correction": journal_correction_block, "subscriber_alerts": subscriber_alerts_block,
+        }
+        return available.get(section, no_report)
 
     live          = data.get("live_stats", {})
     accuracy      = data.get("accuracy_stats", {})
@@ -6823,37 +6860,33 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         html.Div(id="radar-bar-count-message", style={"fontSize":"12px","color":WHITE,"marginTop":"8px"}),
     ], sx={"marginBottom":"16px"})
 
-    # ── Assemble full page ────────────────────────────────────────────────
-    return html.Div([
-        header,
-        snap_block,
-
-        # Two-column row: anomalies + top scores
-        html.Div([
-            html.Div(anomaly_block, style={"flex":"1","minWidth":"0"}),
-        ], style={"marginBottom":"0"}),
-
-        assistant_block,
-        platform_review_block,
-        content_hub_block,
-        report_hub_block,
-        report_pack_block,
-        paper_trading_block,
-        catalyst_engine_block,
-        ma_study_block,
-        astro_research_block,
-        weis_state_block,
-        radar_bars_block,
-        radar_bar_count_block,
-        setup_deployment_block,
-        journal_correction_block,
-        subscriber_alerts_block,
-
-        # Footer
-        html.Div("SIGMALYTIC QUANT CORPORATION  ·  PROPRIETARY & CONFIDENTIAL  ·  INTERNAL USE ONLY",
-                 style={"textAlign":"center","fontSize":"9px","color":WHITE,
-                        "letterSpacing":".2em","paddingTop":"16px","paddingBottom":"8px"}),
-    ])
+    # ── Return only the requested section (the tab opens folded) ─────────
+    sections = {
+        "monitor": html.Div([
+            header,
+            snap_block,
+            html.Div([
+                html.Div(anomaly_block, style={"flex":"1","minWidth":"0"}),
+            ], style={"marginBottom":"0"}),
+        ]),
+        "assistant": assistant_block,
+        "platform_review": platform_review_block,
+        "content_hub": content_hub_block,
+        "report_hub": report_hub_block,
+        "report_pack": report_pack_block,
+        "paper": paper_trading_block,
+        "catalyst": catalyst_engine_block,
+        "ma_study": ma_study_block,
+        "astro": astro_research_block,
+        "weis_state": weis_state_block,
+        "radar_bars": radar_bars_block,
+        "radar_bar_count": radar_bar_count_block,
+        "setup": setup_deployment_block,
+        "journal_correction": journal_correction_block,
+        "subscriber_alerts": subscriber_alerts_block,
+    }
+    return sections.get(section, html.Div(f"Unknown admin section: {section}",
+                                          style={"color": YELLOW_DIM, "fontSize": "12px"}))
 
 
 
@@ -6905,6 +6938,38 @@ except Exception as _prefs_callback_exc:
         f"{type(_prefs_callback_exc).__name__}: {_prefs_callback_exc}",
         flush=True,
     )
+
+def _admin_section_content(key: str, session: dict):
+    """Build one admin section on demand (see ADMIN_SECTIONS / _admin_lazy_section)."""
+    if key == "imbalance":
+        if build_imbalance_tab is None:
+            return note_box("Imbalance tab module did not import. Check frontend/imbalance_tab.py.", "blue")
+        return build_imbalance_tab(session=session, admin=True)
+    if key == "d3f1b":
+        return _build_d3f1b_controlled_persistence_lifecycle_panel(session)
+    if key == "cache":
+        return build_cache_diagnostics_panel()
+    return build_admin_tab(session=session, backend_url=BACKEND_HTTP, section=key)
+
+
+@app.callback(Output({"type": "admin-lazy-body", "key": MATCH}, "children"),
+              Input({"type": "admin-lazy-sum", "key": MATCH}, "n_clicks"),
+              State("s-session", "data"),
+              prevent_initial_call=True)
+def _admin_lazy_load(n_clicks, session):
+    # Built once, on the first click that opens the section; later clicks only fold
+    # and unfold it in the browser, so nothing is re-fetched.
+    if not n_clicks or n_clicks > 1:
+        return no_update
+    session = session if isinstance(session, dict) else {}
+    if not is_admin(session):
+        return html.Div("Admin access only.", style={"color": YELLOW_DIM, "fontSize": "12px"})
+    key = (callback_context.triggered_id or {}).get("key", "")
+    try:
+        return _admin_section_content(key, session)
+    except Exception as e:
+        return note_box(f"Could not load this section: {e}", "blue")
+
 
 # ADDED (2026-08-20): "Market Radio" -- continuous, ambient spoken
 # narration, browser TTS based. See the i-radio/s-radio-* component
@@ -14487,26 +14552,18 @@ def render_main(tab,live,candles,symbol,reports_refresh,weis_refresh,live_mode,t
             return no_update, no_update, no_update, no_update
         try:
             admin_session = session if isinstance(session, dict) else {}
-            if build_imbalance_tab is not None:
-                try:
-                    imbalance_section = build_imbalance_tab(session=admin_session, admin=True)
-                except Exception as e:
-                    imbalance_section = note_box("Imbalance Alerts error: " + str(e), "blue")
-            else:
-                imbalance_section = note_box("Imbalance tab module did not import. Check frontend/imbalance_tab.py.", "blue")
+            # FIX (2026-11-24): every admin section now opens folded and loads on first
+            # click (_admin_lazy_load) instead of all being built and sent at once.
             main = html.Div([
+                html.Div("Admin tools open folded. Click a section to load it; nothing in a folded section "
+                         "is fetched or refreshed.", style={"fontSize": "12px", "color": MUTED}),
                 # MOVED (2026-11-06): Imbalance Alerts, admin-only while in testing.
-                html.Details([
-                    html.Summary("Imbalance Alerts (testing)", style={"color": WHITE, "fontSize": "15px",
-                                                                      "fontWeight": "900", "cursor": "pointer"}),
-                    html.Div(imbalance_section, style={"marginTop": "12px"}),
-                ], open=True, style={"border": f"1px solid {BORDER}", "borderRadius": "16px", "padding": "16px",
-                                     "background": "rgba(8,24,39,.72)"}),
+                _admin_lazy_section("imbalance", "Imbalance Alerts (testing)"),
                 # D3F.1B: developer/audit-only safety verification panel.
                 # Moved here from a global page-wide mount (was showing on
                 # every tab) since this is an internal diagnostic tool, not
                 # customer-facing content.
-                _build_d3f1b_controlled_persistence_lifecycle_panel(admin_session),
+                _admin_lazy_section("d3f1b", "Persistence safety check (D3F.1B, read-only)"),
                 # UPDATE (2026-09-06, at explicit request): moved here
                 # FROM Command Center entirely -- this used to say it was
                 # deliberately NOT duplicated here because it "already
@@ -14521,9 +14578,9 @@ def render_main(tab,live,candles,symbol,reports_refresh,weis_refresh,live_mode,t
                 # duplication risk to guard against anymore either.
                 html.Div("Legacy Weis-Gamma campaign-status panel retired; current Radar snapshot status is displayed in Command Center.",
                          style={"fontSize":"12px","color":WHITE,"marginBottom":"12px"}),
-                build_cache_diagnostics_panel(),
+                _admin_lazy_section("cache", "Cache diagnostics"),
                 build_admin_tab(session=admin_session, backend_url=BACKEND_HTTP),
-            ], style={"display":"flex","flexDirection":"column","gap":"16px"})
+            ], style={"display":"flex","flexDirection":"column","gap":"10px"})
         except Exception as e:
             main = html.Div([
                 html.Div([

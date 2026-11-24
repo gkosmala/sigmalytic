@@ -135,14 +135,24 @@ def _when(iso):
         return iso[:16]
 
 
-def _table(headers, rows):
-    cell = {"padding": "4px 8px", "borderBottom": f"1px solid {BORDER}", "fontSize": "11px", "color": WHITE}
+def _table(headers, rows, cap=25, total=None):
+    """A compact table. Shows at most `cap` rows (newest first, as passed in) with a
+    "Showing X of Y" note, so a long history never bloats the admin page (2026-11-24)."""
+    # Font size and color are set once on the table (cells inherit them) to keep each row small.
+    cell = {"padding": "4px 8px", "borderBottom": f"1px solid {BORDER}"}
     head = {**cell, "color": MUTED, "fontWeight": "800"}
     out = [html.Tr([html.Th(h, style=head) for h in headers])]
-    for r in rows:
+    for r in rows[:cap]:
         out.append(html.Tr([html.Td(c if not isinstance(c, tuple) else c[0],
                                     style={**cell, **({"color": c[1]} if isinstance(c, tuple) else {})}) for c in r]))
-    return html.Table(out, style={"borderCollapse": "collapse", "width": "100%", "marginBottom": "6px"})
+    table = html.Table(out, style={"borderCollapse": "collapse", "width": "100%", "marginBottom": "6px",
+                                   "fontSize": "11px", "color": WHITE})
+    shown = min(cap, len(rows))
+    total = max(total or 0, len(rows))
+    if total <= shown:
+        return table
+    return html.Div([table, html.Div(f"Showing {shown:,} of {total:,}.",
+                                     style={"fontSize": "11px", "color": MUTED, "marginBottom": "8px"})])
 
 
 def _colored(v, text=None):
@@ -209,7 +219,7 @@ def render_portfolio(d):
                      (_money(p["t1_price"]) + (" (done)" if p["t1_done"] else "")) if p["t1_price"] else "–",
                      f"{p['sessions_held']}/{p['time_limit'] or '∞'}", _EXIT_NAMES.get(p["exit_mode"], p["exit_mode"])])
     open_t = _table(["Symbol", "Side", "Shares", "Entry", "Last", "Value", "Open P&L", "Stop", "Target", "2R level",
-                     "Sessions", "Exit rule"], rows) if rows else \
+                     "Sessions", "Exit rule"], rows, cap=50) if rows else \
         html.Div("No open positions.", style={"fontSize": "11px", "color": MUTED, "marginBottom": "8px"})
     wrows = [[w["symbol"], w["side"], w["test_bar_date"], _money(w["entry_trigger"]), _money(w["stop"]),
               _money(w["target"]), str(w["sessions_waited"])] for w in d["waiting"]]
@@ -234,7 +244,7 @@ def render_journal(summary, j):
     return html.Div([
         html.Div("Closed trades", style=sub),
         _table(["Symbol", "Side", "Shares", "Entry", "Avg exit", "Opened", "Closed", "Exit reason", "Net P&L", "R"],
-               closed) if closed
+               closed, total=(summary.get("stats") or {}).get("closed_trades")) if closed
         else html.Div("No closed trades yet.", style={"fontSize": "11px", "color": MUTED}),
         html.Div("Every fill", style=sub),
         _table(["Time", "Symbol", "Action", "Shares", "Price", "Cost", "P&L", "Reason", "Cash after"], fills) if fills

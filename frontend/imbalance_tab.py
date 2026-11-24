@@ -181,6 +181,10 @@ def _alert_row(r: Dict[str, Any]) -> html.Tr:
     return html.Tr(cells)
 
 
+LOG_CAP = 25        # Recent alerts rows shown on the admin page
+READINGS_CAP = 50   # Pillar readings rows shown on the admin page
+
+
 def render_log(rows: List[Dict[str, Any]]) -> html.Div:
     if not rows:
         return _card([_section("Recent alerts"),
@@ -188,10 +192,13 @@ def render_log(rows: List[Dict[str, Any]]) -> html.Div:
     head = html.Thead(html.Tr([_head(x) for x in
                                ("Time (UTC)", "Symbol", "Direction", "Tier", "Pillars", "Options reading", "Price",
                                 "+1d", "+3d", "+5d", "+10d", "Emailed")]))
+    shown = rows[:LOG_CAP]
     return _card([_section("Recent alerts"),
-                  html.Div(html.Table([head, html.Tbody([_alert_row(r) for r in rows])],
+                  html.Div(html.Table([head, html.Tbody([_alert_row(r) for r in shown])],
                                       style={"width": "100%", "borderCollapse": "collapse"}),
-                           style={"overflowX": "auto"})])
+                           style={"overflowX": "auto"})]
+                 + ([_note(f"Showing the latest {len(shown):,} of {len(rows):,}.", MUTED)]
+                    if len(rows) > len(shown) else []))
 
 
 def render_readings(readings: List[Dict[str, Any]], floor: float = 55.0) -> html.Div:
@@ -201,7 +208,11 @@ def render_readings(readings: List[Dict[str, Any]], floor: float = 55.0) -> html
     if not readings:
         return _card([title, _note("No readings yet. They appear after the next scan.")])
     rows = []
-    for r in sorted(readings, key=lambda x: x.get("symbol", "")):
+    # Capped (2026-11-24) so the admin page stays light: fired first, then blocked,
+    # then the rest alphabetically, at most READINGS_CAP rows.
+    ordered = sorted(readings, key=lambda x: (0 if x.get("fired") else 1 if x.get("blocked") else 2,
+                                              x.get("symbol", "")))
+    for r in ordered[:READINGS_CAP]:
         p = r.get("pillars") or {}
         opt = p.get("options_flow") or {}
         if r.get("fired"):
@@ -226,7 +237,9 @@ def render_readings(readings: List[Dict[str, Any]], floor: float = 55.0) -> html
                            "flow must be one of the agreeing pillars.",
                            style={"fontSize": "12px", "color": MUTED, "marginBottom": "8px"}),
                   html.Div(html.Table([head, html.Tbody(rows)], style={"width": "100%", "borderCollapse": "collapse"}),
-                           style={"overflowX": "auto"})])
+                           style={"overflowX": "auto"})]
+                 + ([_note(f"Showing {len(rows):,} of {len(readings):,}: fired and blocked first, then "
+                           "alphabetical.", MUTED)] if len(readings) > len(rows) else []))
 
 
 def render_scan_result(res: Dict[str, Any]) -> html.Div:
