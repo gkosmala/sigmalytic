@@ -3017,6 +3017,13 @@ def build_weis_analysis_tab(symbol, results):
 
 
 def _pnf_count_guide_block(count_guide):
+    if count_guide and not count_guide.get("available") and count_guide.get("reason") == "no_base":
+        return html.Div([
+            html.Div("PNF COUNT GUIDE PROJECTION", style={"fontSize":"9px","color":BLUE_DIM,"fontWeight":"800","marginBottom":"6px"}),
+            html.Div("No base to count — price is trending", style={"fontSize":"11px","color":WHITE,"fontWeight":"800"}),
+            html.Div(count_guide.get("reading", ""), style={"fontSize":"10px","color":MUTED,"marginTop":"4px","lineHeight":"1.5"}),
+        ], style={"background":"rgba(8,24,39,.9)","border":f"1px solid rgba(147,197,253,.25)","borderRadius":"10px",
+                   "padding":"10px","marginBottom":"10px"})
     if not count_guide or not count_guide.get("available"):
         return None
     return html.Div([

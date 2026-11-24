@@ -69,8 +69,13 @@ class PnFWeisEngine:
     def __init__(self, pnf_generator: PointInTimePnFGenerator = None):
         self.pnf_generator = pnf_generator or PointInTimePnFGenerator()
 
-    def build_columns(self, bars: List[Dict[str, Any]]) -> List[PnFColumn]:
-        return self.pnf_generator.generate(bars)
+    # A Count Guide needs a sideways base: at least this many columns side by side.
+    MIN_BASE_COLUMNS = 4
+
+    def build_columns(self, bars: List[Dict[str, Any]], include_open: bool = False) -> List[PnFColumn]:
+        """include_open=True adds the still-forming last column (in_progress=True).
+        Use it for anything described as the CURRENT column or the current base."""
+        return self.pnf_generator.generate(bars, include_open=include_open)
 
     def shortening_of_thrust_score(self, columns: List[PnFColumn]) -> float:
         down = [c for c in columns if c.column_type == "O"]
@@ -417,6 +422,23 @@ class PnFWeisEngine:
         if not range_info.get("available"):
             return {"available": False, "reason": range_info.get("reason", "No range available.")}
 
+        # FIX (2026-11-24, NVDA case): a count measures a sideways base, so a
+        # "range" of one or two columns is a trend leg, not a cause. NVDA's
+        # range was the single 24-box drop from 219.97 to 125.53, which gave
+        # a meaningless upside target of 125.53 + 1 x 12 = 137.53 (below
+        # price) and a downside target of 207.97 (above price). Report no
+        # count instead; get_key_levels() then uses its existing fallback.
+        if range_info.get("column_count", 0) < self.MIN_BASE_COLUMNS:
+            n = range_info.get("column_count", 0)
+            return {
+                "available": False,
+                "reason": "no_base",
+                "reading": (f"No sideways base to count: the latest structure is {n} column"
+                            f"{'' if n == 1 else 's'} wide (a trend, not a base). A count needs at least "
+                            f"{self.MIN_BASE_COLUMNS} columns side by side."),
+                "range_column_count": n,
+            }
+
         box_size = columns[-1].box_size
         range_high = range_info["range_high"]
         range_low = range_info["range_low"]
@@ -580,13 +602,18 @@ class PnFWeisEngine:
         }
 
     def evaluate(self, bars: List[Dict[str, Any]], symbol: str = "") -> PnFWeisVerdict:
-        columns = self.build_columns(bars)
+        # Shortening of thrust and exhaustion compare FINISHED columns (a
+        # still-forming column is always shorter, which would fake a SOT).
+        # The two confirmation scores judge the CURRENT column, so they use
+        # the list that includes the still-forming one (FIX 2026-11-24).
+        all_columns = self.build_columns(bars, include_open=True)
+        columns = [c for c in all_columns if not c.in_progress]
 
         sot = self.shortening_of_thrust_score(columns)
         sot_confirmed = sot >= 100
         exhaustion = self.volume_exhaustion_score(columns, sot_confirmed=sot_confirmed)
         effort_without_reward = self.effort_without_reward_score(columns, sot_confirmed=sot_confirmed)
-        confirmation = self.upcolumn_confirmation_score(columns)
+        confirmation = self.upcolumn_confirmation_score(all_columns)
 
         score = sot * 0.30 + exhaustion * 0.30 + confirmation * 0.40
         if score >= 90:
@@ -602,7 +629,7 @@ class PnFWeisEngine:
         sot_bearish_confirmed = sot_bearish >= 100
         buying_exhaustion = self.buying_exhaustion_score(columns, sot_confirmed=sot_bearish_confirmed)
         buying_effort_without_reward = self.buying_effort_without_reward_score(columns, sot_confirmed=sot_bearish_confirmed)
-        downcolumn_confirmation = self.downcolumn_confirmation_score(columns)
+        downcolumn_confirmation = self.downcolumn_confirmation_score(all_columns)
 
         score_bearish = sot_bearish * 0.30 + buying_exhaustion * 0.30 + downcolumn_confirmation * 0.40
         if score_bearish >= 90:

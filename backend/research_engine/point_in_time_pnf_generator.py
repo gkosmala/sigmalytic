@@ -85,6 +85,7 @@ class PnFColumn:
     start_index: int
     end_index: int
     bar_volumes: List[float] = field(default_factory=list)  # each contributing bar's own volume, in order, for Climax detection
+    in_progress: bool = False  # True only for the still-forming last column (generate(include_open=True))
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -133,11 +134,25 @@ class PointInTimePnFGenerator:
 
         return max(round(raw_box_size / rounding_unit) * rounding_unit, rounding_unit)
 
-    def generate(self, bars: List[Dict[str, Any]]) -> List[PnFColumn]:
+    def generate(self, bars: List[Dict[str, Any]], include_open: bool = False) -> List[PnFColumn]:
         """
         bars: list of dicts with close/c and volume/v (high/low/open
         are not used, matching the existing overlay's close-only
         construction).
+
+        FIX (2026-11-24, NVDA case): returns completed columns only by
+        default, exactly as before. include_open=True also appends the
+        column that is still forming (in_progress=True). Without it, a
+        fresh reversal was invisible: on Nov 23 NVDA reversed from a
+        $125.53 low to a $165.05 close (a new X column), yet the last
+        returned column was still the finished 24-box O column, so the
+        panel read DOWN while price was rising.
+
+        Also fixed: the bar that triggers a reversal (or starts the first
+        column) now counts toward the NEW column's volume, not the column
+        it ended. Before, NVDA's 784M-share reversal day was added to the
+        finished down column and produced a false "Climax Spike" on it.
+        Column direction, prices and box counts are unchanged.
         """
         closes: List[float] = []
         volumes: List[float] = []
@@ -162,6 +177,7 @@ class PointInTimePnFGenerator:
         pending_volume = volumes[0]
         pending_bar_volumes: List[float] = [volumes[0]]
 
+        last_box_size: Optional[float] = None
         for i in range(1, len(closes)):
             price = closes[i]
             pending_volume += volumes[i]
@@ -169,6 +185,7 @@ class PointInTimePnFGenerator:
             box_size = self._point_in_time_box_size(closes[: i + 1])
             if box_size is None or box_size <= 0:
                 continue
+            last_box_size = box_size
             reversal_amount = box_size * self.reversal_boxes
 
             if current_type is None:
@@ -176,14 +193,14 @@ class PointInTimePnFGenerator:
                     current_type = "X"
                     col_low, col_high = base, price
                     col_start_index = i
-                    pending_volume = 0.0
-                    pending_bar_volumes = []
+                    pending_volume = volumes[i]
+                    pending_bar_volumes = [volumes[i]]
                 elif price <= base - box_size:
                     current_type = "O"
                     col_high, col_low = base, price
                     col_start_index = i
-                    pending_volume = 0.0
-                    pending_bar_volumes = []
+                    pending_volume = volumes[i]
+                    pending_bar_volumes = [volumes[i]]
                 continue
 
             if current_type == "X":
@@ -193,16 +210,16 @@ class PointInTimePnFGenerator:
                     boxes = max(1, int(round((col_high - col_low) / box_size)))
                     columns.append(PnFColumn(
                         column_type="X", high=col_high, low=col_low, boxes=boxes,
-                        box_size=box_size, volume=pending_volume,
-                        start_index=col_start_index, end_index=i,
-                        bar_volumes=list(pending_bar_volumes),
+                        box_size=box_size, volume=pending_volume - volumes[i],
+                        start_index=col_start_index, end_index=i - 1,
+                        bar_volumes=list(pending_bar_volumes[:-1]),
                     ))
                     current_type = "O"
                     col_high = col_high - box_size
                     col_low = price
                     col_start_index = i
-                    pending_volume = 0.0
-                    pending_bar_volumes = []
+                    pending_volume = volumes[i]
+                    pending_bar_volumes = [volumes[i]]
             else:
                 if price <= col_low - box_size:
                     col_low = price
@@ -210,16 +227,25 @@ class PointInTimePnFGenerator:
                     boxes = max(1, int(round((col_high - col_low) / box_size)))
                     columns.append(PnFColumn(
                         column_type="O", high=col_high, low=col_low, boxes=boxes,
-                        box_size=box_size, volume=pending_volume,
-                        start_index=col_start_index, end_index=i,
-                        bar_volumes=list(pending_bar_volumes),
+                        box_size=box_size, volume=pending_volume - volumes[i],
+                        start_index=col_start_index, end_index=i - 1,
+                        bar_volumes=list(pending_bar_volumes[:-1]),
                     ))
                     current_type = "X"
                     col_low = col_low + box_size
                     col_high = price
                     col_start_index = i
-                    pending_volume = 0.0
-                    pending_bar_volumes = []
+                    pending_volume = volumes[i]
+                    pending_bar_volumes = [volumes[i]]
+
+        if include_open and current_type is not None and last_box_size:
+            columns.append(PnFColumn(
+                column_type=current_type, high=col_high, low=col_low,
+                boxes=max(1, int(round((col_high - col_low) / last_box_size))),
+                box_size=last_box_size, volume=pending_volume,
+                start_index=col_start_index, end_index=len(closes) - 1,
+                bar_volumes=list(pending_bar_volumes), in_progress=True,
+            ))
 
         return columns
 

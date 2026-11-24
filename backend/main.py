@@ -911,7 +911,7 @@ def _compute_trap_door_estimate(sym: str, fetch_bars_batch, PnFWeisEngine, get_k
     # output -- matches the pattern the real, working pnf-weis
     # endpoint already uses correctly.
     pnf_engine = PnFWeisEngine()
-    columns = pnf_engine.build_columns(bars)
+    columns = pnf_engine.build_columns(bars, include_open=True)
     count_guide = pnf_engine.count_guide_projection(columns)
 
     # ADDED (2026-08-17): additive Weis Wave volume-exhaustion tag.
@@ -1325,7 +1325,7 @@ def trap_door_intraday_check(symbol: str, date: str = ""):
 
         last_close = float(daily_bars[-1].get("c") or daily_bars[-1].get("close"))
         pnf_engine = PnFWeisEngine()
-        columns = pnf_engine.build_columns(daily_bars)
+        columns = pnf_engine.build_columns(daily_bars, include_open=True)
         count_guide = pnf_engine.count_guide_projection(columns)
         kl = get_key_levels(last_close, count_guide=count_guide)
 
@@ -1565,7 +1565,7 @@ def get_pnf_weis_verdict(symbol: str, timeframe: str = "1Day"):
             }
 
         engine = PnFWeisEngine()
-        columns = engine.build_columns(bars)
+        columns = engine.build_columns(bars, include_open=True)  # current column = the one still forming
         verdict = engine.evaluate(bars, symbol=sym)
         result = verdict.to_dict()
         result["ok"] = True
