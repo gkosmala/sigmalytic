@@ -2818,6 +2818,12 @@ def _wyckoff_card(wyckoff_status, wyckoff_data):
     cause_width = v.get("cause_width_pct")
     trend_context = v.get("trend_context", "unknown")
     verdict_label = v.get("verdict", "NO_ACCUMULATION")
+    structure_source = v.get("structure_source", "swings")
+    structure_note = {
+        "selling_climax": "Range forming: selling climax low to automatic rally high",
+        "buying_climax": "Range forming: automatic reaction low to buying climax high",
+        "none": "No range yet: no confirmed swings and no climax",
+    }.get(structure_source)
 
     def _metric_row(label, value, color=WHITE):
         return html.Div([
@@ -2863,6 +2869,7 @@ def _wyckoff_card(wyckoff_status, wyckoff_data):
             ], style={"marginBottom":"4px"}),
             html.Div(f"Cause width: {cause_width*100:.1f}% of range · Trend context: {trend_context}" if cause_width else f"Trend context: {trend_context}",
                       style={"fontSize":"10px","color":MUTED}),
+            html.Div(structure_note, style={"fontSize":"10px","color":WHITE,"fontWeight":"800","marginTop":"4px"}) if structure_note else None,
         ], style={"background":"rgba(2,10,20,.7)","border":f"1px solid {BORDER}","borderRadius":"10px","padding":"10px","marginTop":"auto"}),
     ], style={"border":f"1px solid {BORDER}","borderRadius":"14px","padding":"16px",
                "background":"rgba(8,24,39,.60)","flex":"1","minWidth":"280px",

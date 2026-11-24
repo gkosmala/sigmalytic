@@ -61,6 +61,12 @@ class WyckoffVerdict:
     last_point_of_supply_score: float = 0.0
     secondary_test_score: float = 0.0
 
+    # FIX (2026-11-24): where support/resistance came from -- "swings" (two
+    # confirmed swing highs and lows), "selling_climax" or "buying_climax"
+    # (a climax and its automatic rally/reaction, see _climax_range), or
+    # "none".
+    structure_source: str = "swings"
+
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
@@ -114,12 +120,84 @@ class WyckoffVerdictEngine:
         return df
 
     def _structure_bounds(self, df: pd.DataFrame, idx: int) -> Dict[str, Optional[float]]:
+        """
+        Support/resistance for every Wyckoff reading on the platform (panel,
+        radar, Trade Finder, Imminent, reports, snapshots, paper trading and
+        the backtest scorer all come through here).
+
+        FIX (2026-11-24, NVDA case): a swing point needs 5 bars on each side
+        to be confirmed, so a straight decline (or straight rally) into a
+        climax has fewer than two swing highs/lows and this used to return
+        None -- which made every caller skip the stock entirely at exactly
+        the moment Weis says a range is being born. Per Weis, the climax
+        and the automatic rally (after a selling climax) or automatic
+        reaction (after a buying climax) set the range's first boundaries,
+        so those are used when the swings are not there yet. Stocks with
+        two confirmed swings each way are unchanged.
+        """
         window = df.iloc[max(0, idx - self.structure_lookback):idx]
         recent_highs = window[window["is_high"]]["high"].values
         recent_lows = window[window["is_low"]]["low"].values
-        if len(recent_highs) < 2 or len(recent_lows) < 2:
-            return {"support": None, "resistance": None}
-        return {"support": float(recent_lows[-1]), "resistance": float(recent_highs[-1])}
+        if len(recent_highs) >= 2 and len(recent_lows) >= 2:
+            return {"support": float(recent_lows[-1]), "resistance": float(recent_highs[-1]), "source": "swings"}
+        climax = self._climax_range(df, idx)
+        if climax:
+            return climax
+        return {"support": None, "resistance": None, "source": "none"}
+
+    def _climax_range(self, df: pd.DataFrame, idx: int, lookback: int = 15,
+                      min_move: float = 0.03) -> Optional[Dict[str, Any]]:
+        """
+        The range a climax creates, both directions:
+          - selling climax: the lowest low among climax-volume bars (>= 2x the
+            volume average, the same test as _score_automatic_rally), followed
+            by an automatic rally of at least 3% -> support = climax low,
+            resistance = rally high.
+          - buying climax: the highest high among climax-volume bars, followed
+            by an automatic reaction of at least 3% -> resistance = climax
+            high, support = reaction low.
+        The rally/reaction is measured only on bars after the climax bar. If
+        both exist, the more recent climax wins; if one bar is both, the
+        direction of the 20 bars into it decides (decline -> selling climax).
+        Returns None when there is no climax with a follow-through move.
+        """
+        start = max(0, idx - lookback)
+        window = df.iloc[start:idx + 1]
+        if len(window) < 5:
+            return None
+        vol = window["volume"].to_numpy(dtype=float)
+        sma = window["vol_sma"].to_numpy(dtype=float)
+        hot = np.where(np.nan_to_num(sma, nan=np.inf) > 0, vol >= 2.0 * sma, False)
+        if not hot.any():
+            return None
+        lows = window["low"].to_numpy(dtype=float)
+        highs = window["high"].to_numpy(dtype=float)
+        hot_pos = np.flatnonzero(hot)
+
+        found = []
+        sc = int(hot_pos[np.argmin(lows[hot_pos])])
+        if sc < len(window) - 1:
+            climax_low = lows[sc]
+            ar_high = float(highs[sc + 1:].max())
+            if climax_low > 0 and ar_high / climax_low - 1.0 >= min_move:
+                found.append((sc, "selling_climax", float(climax_low), ar_high))
+        bc = int(hot_pos[np.argmax(highs[hot_pos])])
+        if bc < len(window) - 1:
+            climax_high = highs[bc]
+            ar_low = float(lows[bc + 1:].min())
+            if ar_low > 0 and 1.0 - ar_low / climax_high >= min_move:
+                found.append((bc, "buying_climax", ar_low, float(climax_high)))
+        if not found:
+            return None
+        if len(found) == 2 and found[0][0] == found[1][0]:
+            pos = start + found[0][0]
+            before = float(df["close"].iloc[max(0, pos - 20)])
+            declining = before > float(df["close"].iloc[pos])
+            pick = found[0] if declining else found[1]
+        else:
+            pick = max(found, key=lambda f: f[0])
+        _, kind, support, resistance = pick
+        return {"support": round(support, 4), "resistance": round(resistance, 4), "source": kind}
 
     def _find_well_defined_level(self, df: pd.DataFrame, idx: int, is_support: bool,
                                    lookback: int = 150, proximity_pct: float = 0.0015,
@@ -683,6 +761,8 @@ class WyckoffVerdictEngine:
                 support_level=None, cause_width_pct=None, progress_against_resistance=None,
                 explanation="No sufficient swing structure to define support/resistance.",
                 as_of=datetime.now(timezone.utc).isoformat(),
+                trend_context=self._detect_trend_context(df, idx),
+                structure_source="none",
             ).to_dict()
 
         support = bounds["support"]
@@ -750,6 +830,13 @@ class WyckoffVerdictEngine:
             f"absorption={absorption}, spring={spring}, SOS={sos}; "
             f"resistance={resistance_result['score']}, resolution={resolution_result['score']}, survival={survival}."
         )
+        source = bounds.get("source", "swings")
+        if source == "selling_climax":
+            explanation += (f" Range set by the selling climax low {support:.2f} and the automatic rally "
+                            f"high {resistance:.2f} (too few confirmed swings yet).")
+        elif source == "buying_climax":
+            explanation += (f" Range set by the buying climax high {resistance:.2f} and the automatic reaction "
+                            f"low {support:.2f} (too few confirmed swings yet).")
 
         return WyckoffVerdict(
             symbol=symbol.upper(),
@@ -779,6 +866,7 @@ class WyckoffVerdictEngine:
             last_point_of_support_score=lps,
             last_point_of_supply_score=lpsy,
             secondary_test_score=st,
+            structure_source=source,
         ).to_dict()
 
     def evaluate_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
