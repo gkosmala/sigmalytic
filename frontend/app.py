@@ -13673,7 +13673,8 @@ app.clientside_callback(
             'tab-home', 'tab-command', 'tab-heatmap', 'tab-weis_radar',
             'tab-weis', 'tab-behavior', 'tab-import', 'tab-portfolio',
             'tab-journal', 'tab-billing', 'tab-preferences', 'tab-admin',
-            'tab-status', 'tab-reports', 'tab-guide', 'tab-briefing', 'tab-broker_bi'
+            'tab-status', 'tab-reports', 'tab-guide', 'tab-briefing', 'tab-broker_bi',
+            'tab-futures'
         ];
         const index = buttons.indexOf(id);
         if (index < 0 || !arguments[index]) return dash_clientside.no_update;
@@ -13693,6 +13694,7 @@ app.clientside_callback(
     Input("tab-guide","n_clicks"),
     Input("tab-briefing","n_clicks"),
     Input("tab-broker_bi","n_clicks"),
+    Input("tab-futures","n_clicks"),
     prevent_initial_call=True,
 )
 
