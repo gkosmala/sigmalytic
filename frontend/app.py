@@ -14455,7 +14455,7 @@ def render_main(tab,live,candles,symbol,reports_refresh,weis_refresh,live_mode,t
     # campaign/radar/scoreboard/divergence routing removed -- see ALL_TABS comment above
     # SIGMALYTIC FUTURES NAV V1
     elif tab=="futures":
-        main = html.Div([html.H2("Futures Market Data"),html.P("Tastytrade DXLink futures, VXX volatility ETN, and market-data monitoring."),html.A("OPEN FUTURES DASHBOARD",href=BACKEND_HTTP.rstrip("/")+"/api/futures/dashboard",target="_blank",style={"display":"inline-block","padding":"14px 22px","backgroundColor":"#d9b765","color":"#071321","fontWeight":"bold","borderRadius":"8px"}),html.P("VXX is connected. Cash VIX data remains unavailable; demo quotes may be delayed.")])
+        main = html.Div([html.H2("Futures Market Data"),html.P("Tastytrade DXLink futures, VXX volatility ETN, and market-data monitoring."),html.A("OPEN FUTURES DASHBOARD",href=BACKEND_HTTP.rstrip("/")+"/api/futures/dashboard",target="_blank",style={"display":"inline-block","padding":"14px 22px","backgroundColor":"#d9b765","color":"#071321","fontWeight":"bold","borderRadius":"8px"}),html.P("VXX is connected. Cash VIX data remains unavailable.")])
     elif tab=="behavior":    main = build_behavior_tab(session=session)
     elif tab=="import":      main = build_import_tab()
     elif tab=="portfolio":

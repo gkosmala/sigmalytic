@@ -173,8 +173,7 @@ small { color:var(--muted); }
   Read-only market-data monitoring |
   Refresh interval: 5 seconds
   <p>
-    Demo entitlement does not establish real-time exchange data.
-    Prices may be delayed. No trade execution is available.
+    No trade execution is available.
   </p>
 </div>
 </main>
