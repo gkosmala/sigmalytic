@@ -1,0 +1,36 @@
+# Blueprint for the standalone futures stream worker only.
+# Kept separate from render.yaml so syncing it creates just this one service
+# and never touches the existing, manually managed services.
+# Credentials are copied from sigmalytic-backend's environment.
+services:
+  - type: worker
+    name: sigmalytic-futures-stream
+    runtime: python
+    region: oregon
+    plan: starter
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: python tools/render_futures_stream_worker.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11
+      - key: REDIS_URL
+        fromService:
+          type: web
+          name: sigmalytic-backend
+          envVarKey: REDIS_URL
+      - key: TASTYTRADE_CLIENT_ID
+        fromService:
+          type: web
+          name: sigmalytic-backend
+          envVarKey: TASTYTRADE_CLIENT_ID
+      - key: TASTYTRADE_CLIENT_SECRET
+        fromService:
+          type: web
+          name: sigmalytic-backend
+          envVarKey: TASTYTRADE_CLIENT_SECRET
+      - key: TASTYTRADE_REFRESH_TOKEN
+        fromService:
+          type: web
+          name: sigmalytic-backend
+          envVarKey: TASTYTRADE_REFRESH_TOKEN

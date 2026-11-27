@@ -8229,11 +8229,14 @@ if _tastytrade_os.getenv(
         await tastytrade_futures_service.stop()
 
 # SIGMALYTIC FUTURES READ-ONLY API V1
+# Reads the standalone futures worker's Redis snapshots, falling back to the
+# in-process stream (see backend/futures_feed.py).
+from backend.futures_feed import futures_feed
 from fastapi import Query as _futures_query
 
 @app.get('/api/futures/status')
 def sigmalytic_futures_status():
-    status = tastytrade_futures_service.status()
+    status = futures_feed.status()
     subscribed = status.get('subscribed_symbols', 0)
     received = status.get('received_symbols', 0)
     status['coverage_percent'] = round(100 * received / subscribed, 2) if subscribed else 0.0
@@ -8242,18 +8245,18 @@ def sigmalytic_futures_status():
 
 @app.get('/api/futures/quotes')
 def sigmalytic_futures_quotes(limit: int = _futures_query(default=50, ge=1, le=500), fresh_only: bool = False):
-    quotes = tastytrade_futures_service.quotes()
+    quotes = futures_feed.quotes()
     if fresh_only:
         quotes = {k: v for k, v in quotes.items() if not v.get('stale', True)}
     symbols = sorted(quotes)
-    return {'provider': 'tastytrade', 'market': 'futures', 'mode': 'read_only', 'entitlement_level': tastytrade_futures_service.status().get('entitlement_level'), 'total_matching_symbols': len(symbols), 'returned_symbols': min(limit, len(symbols)), 'quotes': {k: quotes[k] for k in symbols[:limit]}}
+    return {'provider': 'tastytrade', 'market': 'futures', 'mode': 'read_only', 'entitlement_level': futures_feed.status().get('entitlement_level'), 'total_matching_symbols': len(symbols), 'returned_symbols': min(limit, len(symbols)), 'quotes': {k: quotes[k] for k in symbols[:limit]}}
 
 @app.get('/api/futures/quotes/{symbol:path}')
 def sigmalytic_futures_symbol(symbol: str):
-    quotes = tastytrade_futures_service.quotes()
+    quotes = futures_feed.quotes()
     if symbol not in quotes:
         raise HTTPException(status_code=404, detail='No received futures data for symbol')
-    return {'provider': 'tastytrade', 'symbol': symbol, 'entitlement_level': tastytrade_futures_service.status().get('entitlement_level'), 'data': quotes[symbol]}
+    return {'provider': 'tastytrade', 'symbol': symbol, 'entitlement_level': futures_feed.status().get('entitlement_level'), 'data': quotes[symbol]}
 
 # SIGMALYTIC FUTURES DASHBOARD ROUTER V1
 from backend.futures_dashboard import router as futures_dashboard_router
@@ -8285,7 +8288,7 @@ def sigmalytic_volatility_quotes():
 def sigmalytic_futures_intelligence():
     import math
     from datetime import date
-    service = tastytrade_futures_service
+    service = futures_feed
     quotes = service.quotes()
     result = {}
     for root in ('ES','NQ','YM','RTY','CL','GC','VX'):

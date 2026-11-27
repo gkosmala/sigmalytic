@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import math
 import time
 from fastapi import APIRouter
-from backend.tastytrade_futures_service import tastytrade_futures_service
+from backend.futures_feed import futures_feed
 
 router = APIRouter()
 INDEX_SYMBOLS = {
@@ -75,7 +75,7 @@ def _spx_rest_observation():
                 observation = {
                     "symbol": "SPX", "streamer_symbol": "SPX", "last": price,
                     "source": "tastytrade_index_rest",
-                    "entitlement": str(tastytrade_futures_service.stream.entitlement_level or "unknown"),
+                    "entitlement": str(futures_feed.stream.entitlement_level or "unknown"),
                     "as_of": observed.isoformat(),
                 }
                 _spx_rest_cache.update(observation=observation, reason="ok")
@@ -87,8 +87,8 @@ def _spx_rest_observation():
 
 @router.get("/api/indices/spot")
 def spot_indices():
-    stream = tastytrade_futures_service.stream
-    quotes = tastytrade_futures_service.quotes()
+    stream = futures_feed.stream
+    quotes = futures_feed.quotes()
     indices = {}
     for name, candidates in INDEX_SYMBOLS.items():
         best = None
