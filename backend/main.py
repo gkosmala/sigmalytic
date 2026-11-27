@@ -8283,26 +8283,54 @@ def sigmalytic_volatility_quotes():
     _vol_cache.update(at=now,result=result)
     return result
 
-# SIGMALYTIC FUTURES INTELLIGENCE BRIDGE V2
+# SIGMALYTIC FUTURES INTELLIGENCE BRIDGE V3
+# Lists up to three fresh contracts per market, most-traded first (by the
+# session's day volume), so the lead contract is the one the market is
+# actually trading -- e.g. February gold rather than a thin delivery month or
+# a distant expiry. Contracts without volume data rank after those with it,
+# nearest expiration first. Crude oil is limited to expirations within
+# 120 days.
 @app.get('/api/futures/intelligence')
 def sigmalytic_futures_intelligence():
     import math
-    from datetime import date
+    from datetime import date, timedelta
     service = futures_feed
     quotes = service.quotes()
+    today = date.today().isoformat()
+    crude_cutoff = (date.today() + timedelta(days=120)).isoformat()
+
+    def _num(value):
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return None
+        return value if math.isfinite(value) else None
+
     result = {}
-    for root in ('ES','NQ','YM','RTY','CL','GC','VX'):
-        contracts = sorted((c for c in service.contracts if str(c.get('root','')).upper().lstrip('/') == root and str(c.get('expiration') or '') >= date.today().isoformat() and (root != chr(67)+chr(76) or str(c.get(chr(101)+chr(120)+chr(112)+chr(105)+chr(114)+chr(97)+chr(116)+chr(105)+chr(111)+chr(110)) or chr(0)) <= (date.today()+__import__(chr(100)+chr(97)+chr(116)+chr(101)+chr(116)+chr(105)+chr(109)+chr(101)).timedelta(days=120)).isoformat())),key=lambda c: str(c.get('expiration') or ''))
-        observations = []
-        for c in contracts:
+    for root in ('ES', 'NQ', 'YM', 'RTY', 'CL', 'GC', 'VX'):
+        candidates = []
+        for c in service.contracts:
+            if str(c.get('root', '')).upper().lstrip('/') != root:
+                continue
+            expiration = str(c.get('expiration') or '')
+            if not expiration or expiration < today:
+                continue
+            if root == 'CL' and expiration > crude_cutoff:
+                continue
             symbol = c.get('streamer_symbol')
             q = quotes.get(symbol)
-            if not q or q.get('stale',True): continue
-            raw = (q.get('trade') or {}).get('price')
-            try: price = float(raw)
-            except (TypeError,ValueError): continue
-            if not math.isfinite(price) or price <= 0: continue
-            observations.append(dict(symbol=symbol,expiration=c.get('expiration'),last_trade=price,received_at=q.get('received_at'),stale=False,source='tastytrade_dxlink',entitlement=service.stream.entitlement_level))
-            if len(observations) == 3: break
-        result[root] = dict(available=bool(observations),contracts=observations)
-    return dict(mode='read_only',purpose='validated_market_observations_not_trading_signals',markets=result)
+            if not q or q.get('stale', True):
+                continue
+            trade = q.get('trade') or {}
+            price = _num(trade.get('price'))
+            if price is None or price <= 0:
+                continue
+            volume = _num(trade.get('dayVolume'))
+            candidates.append((volume, expiration, dict(
+                symbol=symbol, expiration=c.get('expiration'), last_trade=price,
+                day_volume=volume, received_at=q.get('received_at'), stale=False,
+                source='tastytrade_dxlink', entitlement=service.stream.entitlement_level)))
+        candidates.sort(key=lambda item: (item[0] is None, -(item[0] or 0), item[1]))
+        observations = [item[2] for item in candidates[:3]]
+        result[root] = dict(available=bool(observations), contracts=observations)
+    return dict(mode='read_only', purpose='validated_market_observations_not_trading_signals', markets=result)
